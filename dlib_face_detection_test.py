@@ -13,7 +13,7 @@ while True:
     dets = detector(rgb_image)
     
     for det in dets:
-        cv2.rectangle(img,(det.left(), det.top()), (det.right(), det.bottom()), color_green, line_width)
+        cv2.rectangle(img, (det.left(), det.top()), (det.right(), det.bottom()), color_green, line_width)
     cv2.imshow('my webcam', img)
     if cv2.waitKey(1) == 27:
         break  # esc to quit
