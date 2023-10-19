@@ -84,7 +84,7 @@ def plot_ear(ax, canvas):
 
 if __name__ == "__main__":
 
-    base_options = python.BaseOptions(model_asset_path='face_landmarker.task')
+    base_options = python.BaseOptions(model_asset_path='../models/face_landmarker.task')
     options = vision.FaceLandmarkerOptions(base_options=base_options,
                                            output_face_blendshapes=True,
                                            output_facial_transformation_matrixes=True,

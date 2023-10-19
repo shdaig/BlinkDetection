@@ -66,7 +66,7 @@ def plot_ear(ax, canvas):
 if __name__ == "__main__":
 
     detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+    predictor = dlib.shape_predictor("../models/shape_predictor_68_face_landmarks.dat")
 
     camera = cv2.VideoCapture(0)
     color_green = (0, 255, 0)
