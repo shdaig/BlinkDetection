@@ -1,6 +1,5 @@
-/.ipynb_checkpoints
-/.idea
 /data
-/camera_processing/.ipynb_checkpoints
-/video_converter/.ipynb_checkpoints
-/videofile_processing/.ipynb_checkpoints
+config.ini
+/.idea
+/.ipynb_checkpoints
+/__pycache__

@@ -1,5 +1,4 @@
 import cv2
-from imutils import face_utils
 import numpy as np
 
 import matplotlib
@@ -13,6 +12,7 @@ from collections import deque
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+
 
 def calculate_ear(eye):
     y1 = dist.euclidean(eye[2], eye[3])
@@ -95,9 +95,6 @@ if __name__ == "__main__":
     camera = cv2.VideoCapture(0)
     color_green = (0, 255, 0)
     line_width = 3
-
-    (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
-    (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
 
     fig, ax = plt.subplots()
     canvas = plt.get_current_fig_manager().canvas
