@@ -75,14 +75,14 @@ if __name__ == "__main__":
 
     ear_history = []
 
-    base_landmark_options = python.BaseOptions(model_asset_path='../../models/face_landmarker.task')
+    base_landmark_options = python.BaseOptions(model_asset_path='../../../models/face_landmarker.task')
     landmark_options = vision.FaceLandmarkerOptions(base_options=base_landmark_options,
                                                     output_face_blendshapes=True,
                                                     output_facial_transformation_matrixes=True,
                                                     num_faces=1)
     landmark_detector = vision.FaceLandmarker.create_from_options(landmark_options)
 
-    camera = cv2.VideoCapture("../../data/cam1_converted_1m.mp4")
+    camera = cv2.VideoCapture("../../../data/cam1_converted_1m.mp4")
     # camera = cv2.VideoCapture("/home/neuron/mnt/aksay/Aksay/12proj_sorted/azhogin/20230921/azhogin_20230921.mp4")
     cv2.namedWindow("video")
     cv2.moveWindow("video", 1000, 300)

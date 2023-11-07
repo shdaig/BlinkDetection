@@ -1,5 +1,6 @@
-/data
+data/
 config.ini
-/.idea
-/.ipynb_checkpoints
-/utils/__pycache__
+.ipynb_checkpoints
+__pycache__/
+temp_*/
+.idea/

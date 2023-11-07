@@ -20,7 +20,7 @@ def process_video(filepath_args):
 
     ear_history = []
 
-    base_landmark_options = python.BaseOptions(model_asset_path='../models/face_landmarker.task')
+    base_landmark_options = python.BaseOptions(model_asset_path='../../models/face_landmarker.task')
     landmark_options = vision.FaceLandmarkerOptions(base_options=base_landmark_options,
                                                     output_face_blendshapes=True,
                                                     output_facial_transformation_matrixes=True,
@@ -59,7 +59,7 @@ def process_video(filepath_args):
     with open(filepath_args[1], 'wb') as f:
         np.save(f, np.array(ear_history))
 
-    printc(f"(!) done {filepath_args[1]}", 'g')
+    printc(f"(!) done {filepath_args[1]}\n", 'g')
     return 0
 
 
