@@ -13,7 +13,7 @@ def read_fif(filename: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return times, channel_names, channel_data
 
 
-def segment_signal(signal: np.ndarray) -> np.ndarray:
+def segment_signal(signal: np.ndarray, debug=False) -> np.ndarray:
     elems_change = 1
     threshold = 0.35
 
@@ -107,4 +107,7 @@ def segment_signal(signal: np.ndarray) -> np.ndarray:
         else:
             i += 1
 
-    return ec_timeseries
+    if not debug:
+        return ec_timeseries
+    else:
+        return ec_timeseries, signal_moving_avg, signal_diff, signal_std_upper, signal_std_lower
