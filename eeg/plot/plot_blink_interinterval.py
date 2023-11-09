@@ -79,7 +79,7 @@ def plot_blink_interinterval(fname: str, save_fname: str = ""):
 if __name__ == "__main__":
     name_files, name_files_trimmed = path.find_by_format(gcfg.PROJ_SORTED_PATH, '**/*.raw.fif.gz')
 
-    if not _PROCESS_ALL:
+    if _PROCESS_ALL:
         for i in range(len(name_files)):
             fname = name_files[i]
             save_fname_list = name_files_trimmed[i].split("/")

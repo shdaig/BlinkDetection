@@ -20,10 +20,6 @@ if input_option == -1:
 
 times, channel_names, channel_data = eeg.read_fif(name_files[input_option])
 
-print(channel_names)
-print(channel_data.shape)
-print(channel_data)
-
 fp1 = channel_data[channel_names == "Fp1"][0]
 fp2 = channel_data[channel_names == "Fp2"][0]
 
