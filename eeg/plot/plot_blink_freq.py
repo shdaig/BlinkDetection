@@ -6,41 +6,56 @@ import utils.reaction_utils as ru
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numba import njit
 import os
+import time
 
-_PROCESS_ALL = 1
+_PROCESS_ALL = 0
 _SAVE_PLOTS_PATH = "temp_plots"
-_WINDOW_SECONDS = 30
+_WINDOW_SECONDS = 60 * 1
 
 
-def square_pics_search(data):
-    threshold = 0.000000005
-    indices_above_threshold = np.where(data > threshold)[0]
+@njit
+def blinks_window_count(blink_detection_list: np.ndarray, window_seconds: int):
+    times = []
+    blink_freq = []
 
-    window_size = 150
-    max_indices = []
-    i = 0
-    while i < len(indices_above_threshold) - 1:
-        if indices_above_threshold[i + 1] - indices_above_threshold[i] >= window_size:
-            max_indices.append(indices_above_threshold[i])
-            i += 1
+    blink_count = 0
+    time_threshold = 500 * window_seconds
+    t = 0
+    for i in range(0, blink_detection_list.shape[0]):
+        if t >= time_threshold or i == blink_detection_list.shape[0] - 1:
+            times.append(i)
+            blink_freq.append(blink_count)
+            blink_count = 0
+            t = 0
         else:
-            j = i
-            while j < len(indices_above_threshold) - 1 and indices_above_threshold[j + 1] - indices_above_threshold[j] < window_size:
-                j += 1
-            end_index = indices_above_threshold[j] + 1
-            max_search_slice = data[indices_above_threshold[i]:end_index]
-            max_index_in_window = np.argmax(max_search_slice) + indices_above_threshold[i]
-            max_indices.append(max_index_in_window)
-            i = j + 1
+            if blink_detection_list[i] == 1:
+                blink_count += 1
+        t += 1
 
-    result_array = np.zeros((data.shape[0],))
-    result_array[max_indices] = 1
-
-    return result_array
+    return blink_freq, times
 
 
-def plot_blink_interinterval(fname: str, window_seconds: int, save_fname: str = ""):
+def get_freq_char(signal: np.ndarray, times: np.ndarray, window_seconds: int):
+    eeg_bands = {'Theta': (4, 8),
+                 'Alpha': (8, 12),
+                 'Beta': (12, 30)}
+    fft_freq = np.fft.rfftfreq(500 * window_seconds, 1.0 / 500)
+    eeg_band_fft = {'Theta': [],
+                    'Alpha': [],
+                    'Beta': []}
+    fft_times = np.insert(times, 0, 0)
+    for t in range(len(fft_times) - 1):
+        fft_vals = np.absolute(np.fft.rfft(signal[fft_times[t]:fft_times[t + 1]]))
+        for band in eeg_bands:
+            freq_ix = np.where((fft_freq >= eeg_bands[band][0]) & (fft_freq <= eeg_bands[band][1]))[0]
+            eeg_band_fft[band].append(np.mean(fft_vals[freq_ix]))
+
+    return eeg_band_fft
+
+
+def plot_eeg_characteristics(fname: str, window_seconds: int, save_fname: str = ""):
     _, channel_names, channel_data = eeg.read_fif(fname)
 
     try:
@@ -52,39 +67,25 @@ def plot_blink_interinterval(fname: str, window_seconds: int, save_fname: str = 
         fp_avg[fp_avg > 0.00015] = 0.00015
         fp_avg[fp_avg < -0.00015] = -0.00015
 
-        fp_avg_sq = fp_avg * fp_avg
+        blink_detection_list = eeg.square_pics_search(fp_avg)
 
-        # blink_segments = eeg.segment_signal(fp_avg)
-        blink_segments = square_pics_search(fp_avg_sq)
+        blink_freq, times = blinks_window_count(blink_detection_list, window_seconds=window_seconds)
+        blink_freq = np.array(blink_freq)
+        times = np.array(times)
 
-        times = []
-        intervals = []
+        lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(fname, window=window_seconds // 60)
 
-        blink_count = 0
-        time_threshold = 500 * window_seconds
-        t = 0
-        for i in range(0, blink_segments.shape[0]):
-            if t >= time_threshold:
-                t = 0
-                intervals.append(blink_count)
-                blink_count = 0
-            else:
-                if blink_segments[i] == 1:
-                    blink_count += 1
-                t += 1
+        eeg_band_fft = get_freq_char(fp_avg, times=times, window_seconds=window_seconds)
 
-        if blink_count > 0:
-            intervals.append(blink_count)
+        times = times / 500
 
-        for i in range(len(intervals)):
-            times.append(window_seconds * i)
+        blink_freq = blink_freq[np.where(times > react_range[0])[0][0]:np.where(times > react_range[-1])[0][0]]
+        for band in eeg_band_fft:
+            eeg_band_fft[band] = eeg_band_fft[band][np.where(times > react_range[0])[0][0]:np.where(times > react_range[-1])[0][0]]
+        times = times[np.where(times > react_range[0])[0][0]:np.where(times > react_range[-1])[0][0]]
 
-        lags = ru.qual_plot_data(fname)
+        ax = ru.plot_qual(lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q, times, blink_freq / np.max(blink_freq))
 
-        intervals = np.array(intervals)
-        intervals = intervals / np.max(intervals)
-
-        ax = ru.plot_qual(lags[0], lags[1], lags[2], lags[3], lags[4], lags[5], lags[6], times, intervals)
         if save_fname != "":
             if not os.path.exists(_SAVE_PLOTS_PATH):
                 os.mkdir(_SAVE_PLOTS_PATH)
@@ -106,7 +107,7 @@ if __name__ == "__main__":
             save_fname_list = name_files_trimmed[i].split("/")
             save_fname = save_fname_list[0] + "_" + save_fname_list[1] + "_" + str(_WINDOW_SECONDS) + ".png"
             printc(f"start processing: [{i}] {fname}...", 'lg')
-            plot_blink_interinterval(fname, _WINDOW_SECONDS, save_fname=save_fname)
+            plot_eeg_characteristics(fname, _WINDOW_SECONDS, save_fname=save_fname)
     else:
         printc("\nAvailable files:\n", "lg")
         for i in range(len(name_files)):
@@ -121,4 +122,4 @@ if __name__ == "__main__":
 
         fname = name_files[input_option]
 
-        plot_blink_interinterval(fname, _WINDOW_SECONDS)
+        plot_eeg_characteristics(fname, _WINDOW_SECONDS)

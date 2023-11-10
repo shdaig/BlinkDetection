@@ -6,6 +6,7 @@ import numpy as np
 import os
 from datetime import timedelta, datetime, time
 
+
 def reaction_lags(marks, times, first_mark_time, mark_set=(50, 51), response=1, double=False, check_err=False):
     # print('//////////')
     ones = np.argwhere(marks==response).flatten()
@@ -15,7 +16,7 @@ def reaction_lags(marks, times, first_mark_time, mark_set=(50, 51), response=1, 
         if marks[i-1] in mark_set: 
             lags.append(times[i]-times[i-1])
             lag_times.append(times[i]-first_mark_time)
-        elif check_err and (marks[i-1]==check_err) and (marks[i-2] in mark_set):
+        elif check_err and (marks[i-1] == check_err) and (marks[i-2] in mark_set):
             lags.append(times[i]-times[i-2])
             lag_times.append(times[i]-first_mark_time)
         elif double and (marks[i-2] in mark_set):
@@ -24,7 +25,9 @@ def reaction_lags(marks, times, first_mark_time, mark_set=(50, 51), response=1, 
     # print(f'Среднее время реакции = {np.mean(lags):.3f} ± {np.std(lags):.3f} с по {len(lags)} ответам')
     return lags, lag_times
 
+
 def quality2(df, window=timedelta(minutes=3), calibrate=20, ys=False):
+    # print(window)
     start = df.index[0]
     res = []
     reacts = 0
@@ -65,19 +68,21 @@ def quality2(df, window=timedelta(minutes=3), calibrate=20, ys=False):
     if ys: return erry, lagy
     else: return np.array(res)
 
-def qual_plot_data(fname, raw=None):
+
+def qual_plot_data(fname, window=3, raw=None):
     cache = os.path.join(os.path.dirname(fname), 'quality_plot.pickle')
-    if os.path.exists(cache):
+    # if os.path.exists(cache):
+    if False:
         with open(cache, 'rb') as f:
             return pickle.load(f)
     else:
         if raw is None:
-            raw = mne.io.read_raw_fif(fname)
-            raw.load_data()
-            raw = raw.set_eeg_reference(ref_channels='average')
+            raw = mne.io.read_raw_fif(fname, verbose=False)
+            raw.load_data(verbose=False)
+            raw = raw.set_eeg_reference(ref_channels='average', verbose=False)
 
         anns = raw.annotations.to_data_frame()
-        events, events_id = mne.events_from_annotations(raw)
+        events, events_id = mne.events_from_annotations(raw, verbose=False)
         react_mark, err_mark = events_id['reaction'], events_id['error']
         stim1, stim2, stim3 = events_id['stim1'], events_id['stim2'], events_id['stim3']
         try: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False) # err_mark
@@ -100,7 +105,7 @@ def qual_plot_data(fname, raw=None):
 
         datedum = datetime.combine(datetime.today().date(), time(0, 0, 0))
         df = pd.DataFrame({'reaction': react_mask[sortidx], 'error': err_mask[sortidx], 'lags': lags_common[sortidx]}, index=[datedum + timedelta(seconds=el) for el in common_times[sortidx]])
-        q = quality2(df, calibrate=20, )
+        q = quality2(df, window=timedelta(minutes=window), calibrate=20)
         react_range = common_times[sortidx]
         
         with open(cache, 'wb') as f:
@@ -109,7 +114,7 @@ def qual_plot_data(fname, raw=None):
         return to_save
     
     
-def plot_qual(lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q, times, intervals_mean):
+def plot_qual(lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q, times, blink_data):
     fig = plt.figure(figsize=(24, 4))
     ax = plt.subplot(111)
     ax.scatter(lag_times+first_mark_time, lags, c='g', alpha=.5, s=30)
@@ -117,8 +122,9 @@ def plot_qual(lags, lag_times, lags2, lag_times2, first_mark_time, react_range, 
     ax.set_xlabel('Time, sec')
     ax.scatter(lag_times2+first_mark_time, lags2, marker='x', c='r', alpha=.5, s=30)
     ax = ax.twinx()
-    ax.plot(np.linspace(react_range[0], react_range[-1], len(q)), q)
-    ax.plot(np.array(times), intervals_mean)
+    # ax.plot(np.linspace(react_range[0], react_range[-1], len(q)), q)
+    ax.plot(np.array(times), q)
+    ax.plot(np.array(times), blink_data)
     ax.set_ylabel('Quality, a.u.')
     ax.set_ylim(-.1, 1.1)
     return ax

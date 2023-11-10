@@ -13,6 +13,36 @@ def read_fif(filename: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return times, channel_names, channel_data
 
 
+def square_pics_search(raw_signal_data: np.ndarray) -> np.ndarray:
+    data = raw_signal_data * raw_signal_data
+
+    threshold = 0.000000005
+    indices_above_threshold = np.where(data > threshold)[0]
+
+    window_size = 150
+    max_indices = []
+    i = 0
+    while i < len(indices_above_threshold) - 1:
+        if indices_above_threshold[i + 1] - indices_above_threshold[i] >= window_size:
+            max_indices.append(indices_above_threshold[i])
+            i += 1
+        else:
+            j = i
+            while j < len(indices_above_threshold) - 1 and indices_above_threshold[j + 1] - indices_above_threshold[
+                j] < window_size:
+                j += 1
+            end_index = indices_above_threshold[j] + 1
+            max_search_slice = data[indices_above_threshold[i]:end_index]
+            max_index_in_window = np.argmax(max_search_slice) + indices_above_threshold[i]
+            max_indices.append(max_index_in_window)
+            i = j + 1
+
+    result_array = np.zeros((data.shape[0],))
+    result_array[max_indices] = 1
+
+    return result_array
+
+
 def segment_signal(signal: np.ndarray, debug=False) -> np.ndarray:
     elems_change = 1
     threshold = 0.35
@@ -111,3 +141,4 @@ def segment_signal(signal: np.ndarray, debug=False) -> np.ndarray:
         return ec_timeseries
     else:
         return ec_timeseries, signal_moving_avg, signal_diff, signal_std_upper, signal_std_lower
+
