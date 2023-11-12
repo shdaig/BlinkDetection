@@ -1,7 +1,7 @@
 import utils.global_configs as gcfg
 import utils.path as path
 import utils.eeg as eeg
-from utils.color_print import printc
+from utils.color_print import *
 import utils.reaction_utils as ru
 
 import matplotlib.pyplot as plt
@@ -17,9 +17,8 @@ from sklearn.preprocessing import LabelEncoder
 import warnings
 warnings.filterwarnings("ignore")
 
-_PROCESS_ALL = 0
-_WINDOW_SECONDS = 60 * 1
 _WINDOWS = [1, 2, 3, 4, 5]
+_SAVE_PLOTS_PATH = "temp_plots"
 
 
 @njit
@@ -44,27 +43,30 @@ def blinks_window_count(blink_detection_list: np.ndarray, window_seconds: int):
     return blink_freq, times
 
 
-def get_freq_char(channel_data: np.ndarray, times: np.ndarray):
-    eeg_bands = {'Theta': (4, 8),
+def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, compute_channels, times: np.ndarray):
+    eeg_bands = {'Delta': (0, 4),
+                 'Theta': (4, 8),
                  'Alpha': (8, 12),
                  'Beta': (12, 30)}
     fft_times = np.insert(times, 0, 0)
 
     eeg_band_fft_list = []
 
-    for k in range(len(channel_data) - 2):
-        signal = channel_data[k]
-        eeg_band_fft = {'Theta': [],
-                        'Alpha': [],
-                        'Beta': []}
-        for t in range(len(fft_times) - 1):
-            fft_vals = np.absolute(np.fft.rfft(signal[fft_times[t]:fft_times[t + 1]]))
-            for band in eeg_bands:
-                fft_freq = np.fft.rfftfreq(len(fft_vals), 1.0 / 500)
-                freq_ix = np.where((fft_freq >= eeg_bands[band][0]) & (fft_freq <= eeg_bands[band][1]))[0]
-                eeg_band_fft[band].append(np.mean(fft_vals[freq_ix]))
+    for channel in compute_channels:
+        if channel in channel_names:
+            signal = channel_data[channel_names == channel][0]
+            eeg_band_fft = {'Delta': [],
+                            'Theta': [],
+                            'Alpha': [],
+                            'Beta': []}
+            for t in range(len(fft_times) - 1):
+                fft_vals = np.absolute(np.fft.rfft(signal[fft_times[t]:fft_times[t + 1]]))
+                for band in eeg_bands:
+                    fft_freq = np.fft.rfftfreq(len(fft_vals), 1.0 / 500)
+                    freq_ix = np.where((fft_freq >= eeg_bands[band][0]) & (fft_freq <= eeg_bands[band][1]))[0]
+                    eeg_band_fft[band].append(np.mean(fft_vals[freq_ix]))
 
-        eeg_band_fft_list.append(eeg_band_fft)
+            eeg_band_fft_list.append(eeg_band_fft)
 
     eeg_band_fft_mean = dict()
     for band in eeg_bands:
@@ -74,14 +76,15 @@ def get_freq_char(channel_data: np.ndarray, times: np.ndarray):
         mean_freq /= len(eeg_band_fft_list)
         eeg_band_fft_mean[band] = mean_freq
 
-    eeg_band_fft_mean['Beta/Alpha'] = eeg_band_fft_mean['Beta'] / eeg_band_fft_mean['Alpha']
+    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta']
+    eeg_band_fft_mean['Delta/Alpha'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Alpha']
+    # eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha']
+    # eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta']
 
     return eeg_band_fft_mean
 
 
-def fetch_eeg_characteristics(fname: str, window_seconds: int):
-    _, channel_names, channel_data = eeg.read_fif(fname)
-
+def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_data: np.ndarray, compute_channels, window_seconds: int):
     fp1 = channel_data[channel_names == "Fp1"][0]
     fp2 = channel_data[channel_names == "Fp2"][0]
 
@@ -98,7 +101,7 @@ def fetch_eeg_characteristics(fname: str, window_seconds: int):
 
     lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(fname, window=window_seconds // 60)
 
-    eeg_band_fft = get_freq_char(channel_data, times=times)
+    eeg_band_fft = get_freq_char(channel_names, channel_data, compute_channels, times=times)
 
     times = times / 500
 
@@ -115,6 +118,21 @@ def categorical_encoder(y, num_classes=4):
     for i in range(len(y)):
         encoded_y[i, int(y[i])] = 1.0
     return encoded_y
+
+
+def plot_predict_result(save_fname, y_test, y_pred, window):
+    if not os.path.exists(_SAVE_PLOTS_PATH):
+        os.mkdir(_SAVE_PLOTS_PATH)
+    save_path = _SAVE_PLOTS_PATH + "/" + save_fname
+    x = []
+    for i in range(len(y_test) - 1):
+        x.append(window * i)
+    plt.figure(figsize=(16, 6))
+    plt.plot(x, y_test[:-1], label='y_test')
+    plt.plot(x, y_pred[:-1], label='y_pred')
+    plt.legend()
+    plt.savefig(save_path)
+    plt.close()
 
 
 if __name__ == "__main__":
@@ -141,22 +159,40 @@ if __name__ == "__main__":
     if len(fetch_indices) == 0:
         exit(0)
 
-    for test_idx in fetch_indices:
-        train_indices = []
-        for i in fetch_indices:
-            if i != test_idx:
-                train_indices.append(i)
+    # compute_channels = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
+    # compute_channels = ['F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
+    compute_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
 
-        print()
-        printc("train:", 'lg')
-        for train_idx in train_indices:
-            print(name_files_trimmed[train_idx])
-        printc("test:", 'lg')
-        print(name_files_trimmed[test_idx])
+    channel_names_list = []
+    channel_data_list = []
 
-        for window in _WINDOWS:
-            print(f"--window: {window} m--")
-            window_seconds = 60 * window
+    for idx in fetch_indices:
+        _, channel_names, channel_data = eeg.read_fif(name_files[idx])
+        channel_names_list.append(channel_names)
+        channel_data_list.append(channel_data)
+
+    roc_auc_windows_avg = []
+
+    for window in _WINDOWS:
+        window_seconds = 60 * window
+
+        roc_auc_models_avg = {
+            'XGBClassifier': 0.,
+            'LogisticRegression': 0.
+        }
+
+        for test_idx in fetch_indices:
+            train_indices = []
+            for i in fetch_indices:
+                if i != test_idx:
+                    train_indices.append(i)
+
+            print("train:")
+            for train_idx in train_indices:
+                print(name_files_trimmed[train_idx])
+            print("test:")
+            printlg(name_files_trimmed[test_idx])
+            printlg(f"window: {window} m")
 
             x_train = []
             y_train = []
@@ -164,24 +200,27 @@ if __name__ == "__main__":
             y_test = []
 
             for train_idx in train_indices:
-                # try:
-                blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[train_idx],
-                                                                               window_seconds=window_seconds)
-                x = []
-                for i in range(len(times)):
-                    x.append(blink_freq[i])
-                    for band in eeg_band_fft:
-                        x.append(eeg_band_fft[band][i])
-                    x_train.append(x)
-                    if q[i] != 1.0:
-                        y_train.append(q[i] // 0.25)
-                    else:
-                        y_train.append(3.0)
+                try:
+                    blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[train_idx],
+                                                                                   channel_names_list[train_idx],
+                                                                                   channel_data_list[train_idx],
+                                                                                   compute_channels,
+                                                                                   window_seconds=window_seconds)
                     x = []
-                # except Exception as e:
-                #     printc(f"error with file {name_files_trimmed[train_idx]}", 'r')
-                #     printc(f"{e}", 'r')
-                #     exit(1)
+                    for i in range(len(times)):
+                        x.append(blink_freq[i])
+                        for band in eeg_band_fft:
+                            x.append(eeg_band_fft[band][i])
+                        x_train.append(x)
+                        if q[i] != 1.0:
+                            y_train.append(q[i] // 0.25)
+                        else:
+                            y_train.append(3.0)
+                        x = []
+                except Exception as e:
+                    printc(f"error with file {name_files_trimmed[train_idx]}", 'r')
+                    printc(f"{e}", 'r')
+                    exit(1)
 
             # categorical_y_train = categorical_encoder(y_train)
             x_train = np.array(x_train)
@@ -189,6 +228,9 @@ if __name__ == "__main__":
 
             try:
                 blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[test_idx],
+                                                                               channel_names_list[test_idx],
+                                                                               channel_data_list[test_idx],
+                                                                               compute_channels,
                                                                                window_seconds=window_seconds)
 
                 x = []
@@ -222,7 +264,6 @@ if __name__ == "__main__":
                     x_test = np.append(x_test, [x_train[y_train == label][0]], axis=0)
                     y_test = np.append(y_test, label)
 
-
             # print(f"\tx_train: {x_train.shape}")
             # print(f"\ty_train: {y_train.shape}")
             # print(f"\tcategorical_y_train: {categorical_y_train.shape}")
@@ -235,17 +276,35 @@ if __name__ == "__main__":
             y_test = le.transform(y_test)
 
             try:
-                printc(f"\tXGBClassifier", 'g')
+                print(f"\tXGBClassifier")
                 xgbclsf = XGBClassifier()
                 xgbclsf.fit(x_train, y_train)
-                y_test_pred_xgbclsf = xgbclsf.predict_proba(x_test)
-                printc(f"\t\troc_auc_score: {roc_auc_score(y_test, y_test_pred_xgbclsf, multi_class='ovr')}", 'g')
+                y_test_pred_xgb = xgbclsf.predict_proba(x_test)
+                roc_auc_xgb = roc_auc_score(y_test, y_test_pred_xgb, multi_class='ovr')
+                roc_auc_models_avg['XGBClassifier'] += roc_auc_xgb
+                plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_xgb.png", y_test, y_test_pred_xgb, window)
+                print(f"\t\troc_auc_score: {roc_auc_xgb}")
 
-                printc(f"\tLogisticRegression", 'g')
+                print(f"\tLogisticRegression")
                 logreg = LogisticRegression().fit(x_train, y_train)
                 y_test_pred_logreg = logreg.predict_proba(x_test)
-                printc(f"\t\troc_auc_score: {roc_auc_score(y_test, y_test_pred_logreg, multi_class='ovr')}", 'g')
-
+                roc_auc_logreg = roc_auc_score(y_test, y_test_pred_logreg, multi_class='ovr')
+                roc_auc_models_avg['LogisticRegression'] += roc_auc_logreg
+                plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_logreg.png", y_test, y_test_pred_logreg, window)
+                print(f"\t\troc_auc_score: {roc_auc_logreg}")
 
             except Exception as e:
-                printc(f"{e}", 'r')
+                printr(f"{e}")
+
+        for model in roc_auc_models_avg:
+            roc_auc_models_avg[model] /= len(fetch_indices)
+
+        roc_auc_windows_avg.append(roc_auc_models_avg)
+
+    print()
+    printg("Mean Results")
+    print(compute_channels)
+    for i in range(len(_WINDOWS)):
+        print(f"window: {_WINDOWS[i]} m")
+        for model in roc_auc_windows_avg[i]:
+            print(f"\t{model}: {roc_auc_windows_avg[i][model]}")

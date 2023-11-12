@@ -36,3 +36,19 @@ def printc(s: str, color: str = ''):
         _print_light_gray(s)
     else:
         print(s)
+
+
+def printg(s: str):
+    _print_green(s)
+
+
+def printr(s: str):
+    _print_red(s)
+
+
+def printy(s: str):
+    _print_yellow(s)
+
+
+def printlg(s: str):
+    _print_light_gray(s)
