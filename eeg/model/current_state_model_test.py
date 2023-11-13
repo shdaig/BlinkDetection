@@ -1,3 +1,5 @@
+from sklearn.neural_network import MLPClassifier
+
 import utils.global_configs as gcfg
 import utils.path as path
 import utils.eeg as eeg
@@ -8,16 +10,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numba import njit
 import os
-import time
 from xgboost import XGBClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
 
 import warnings
 warnings.filterwarnings("ignore")
 
-_WINDOWS = [1, 2, 3, 4, 5]
+_WINDOWS = [3]
 _SAVE_PLOTS_PATH = "temp_plots"
 
 
@@ -85,6 +87,7 @@ def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, compute_c
 
 
 def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_data: np.ndarray, compute_channels, window_seconds: int):
+    # print(f"{fname} - {channel_names}")
     fp1 = channel_data[channel_names == "Fp1"][0]
     fp2 = channel_data[channel_names == "Fp2"][0]
 
@@ -127,9 +130,10 @@ def plot_predict_result(save_fname, y_test, y_pred, window):
     x = []
     for i in range(len(y_test) - 1):
         x.append(window * i)
+    y_pred_numeric = np.argmax(y_pred, axis=1)
     plt.figure(figsize=(16, 6))
     plt.plot(x, y_test[:-1], label='y_test')
-    plt.plot(x, y_pred[:-1], label='y_pred')
+    plt.plot(x, y_pred_numeric[:-1], label='y_pred')
     plt.legend()
     plt.savefig(save_path)
     plt.close()
@@ -165,11 +169,16 @@ if __name__ == "__main__":
 
     channel_names_list = []
     channel_data_list = []
+    ordinal_indices = dict()
 
+    ordinal_idx = 0
     for idx in fetch_indices:
         _, channel_names, channel_data = eeg.read_fif(name_files[idx])
+        # print(channel_names)
         channel_names_list.append(channel_names)
         channel_data_list.append(channel_data)
+        ordinal_indices[idx] = ordinal_idx
+        ordinal_idx += 1
 
     roc_auc_windows_avg = []
 
@@ -177,7 +186,6 @@ if __name__ == "__main__":
         window_seconds = 60 * window
 
         roc_auc_models_avg = {
-            'XGBClassifier': 0.,
             'LogisticRegression': 0.
         }
 
@@ -202,8 +210,8 @@ if __name__ == "__main__":
             for train_idx in train_indices:
                 try:
                     blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[train_idx],
-                                                                                   channel_names_list[train_idx],
-                                                                                   channel_data_list[train_idx],
+                                                                                   channel_names_list[ordinal_indices[train_idx]],
+                                                                                   channel_data_list[ordinal_indices[train_idx]],
                                                                                    compute_channels,
                                                                                    window_seconds=window_seconds)
                     x = []
@@ -218,7 +226,7 @@ if __name__ == "__main__":
                             y_train.append(3.0)
                         x = []
                 except Exception as e:
-                    printc(f"error with file {name_files_trimmed[train_idx]}", 'r')
+                    printc(f"error with train file {name_files_trimmed[train_idx]}", 'r')
                     printc(f"{e}", 'r')
                     exit(1)
 
@@ -228,8 +236,8 @@ if __name__ == "__main__":
 
             try:
                 blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[test_idx],
-                                                                               channel_names_list[test_idx],
-                                                                               channel_data_list[test_idx],
+                                                                               channel_names_list[ordinal_indices[test_idx]],
+                                                                               channel_data_list[ordinal_indices[test_idx]],
                                                                                compute_channels,
                                                                                window_seconds=window_seconds)
 
@@ -245,7 +253,7 @@ if __name__ == "__main__":
                         y_test.append(3.0)
                     x = []
             except Exception as e:
-                printc(f"error with file {name_files_trimmed[test_idx]}", 'r')
+                printc(f"error with test file {name_files_trimmed[test_idx]}", 'r')
                 printc(f"{e}", 'r')
                 exit(1)
 
@@ -275,26 +283,21 @@ if __name__ == "__main__":
             y_train = le.fit_transform(y_train)
             y_test = le.transform(y_test)
 
-            try:
-                print(f"\tXGBClassifier")
-                xgbclsf = XGBClassifier()
-                xgbclsf.fit(x_train, y_train)
-                y_test_pred_xgb = xgbclsf.predict_proba(x_test)
-                roc_auc_xgb = roc_auc_score(y_test, y_test_pred_xgb, multi_class='ovr')
-                roc_auc_models_avg['XGBClassifier'] += roc_auc_xgb
-                plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_xgb.png", y_test, y_test_pred_xgb, window)
-                print(f"\t\troc_auc_score: {roc_auc_xgb}")
+            scaler = StandardScaler()
+            x_train = scaler.fit_transform(x_train)
+            x_test = scaler.transform(x_test)
 
-                print(f"\tLogisticRegression")
-                logreg = LogisticRegression().fit(x_train, y_train)
-                y_test_pred_logreg = logreg.predict_proba(x_test)
-                roc_auc_logreg = roc_auc_score(y_test, y_test_pred_logreg, multi_class='ovr')
-                roc_auc_models_avg['LogisticRegression'] += roc_auc_logreg
-                plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_logreg.png", y_test, y_test_pred_logreg, window)
-                print(f"\t\troc_auc_score: {roc_auc_logreg}")
+            # try:
+            print(f"\tLogisticRegression")
+            model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0).fit(x_train, y_train)
+            y_pred = model.predict_proba(x_test)
+            roc_auc = roc_auc_score(y_test, y_pred, multi_class='ovr')
+            roc_auc_models_avg['LogisticRegression'] += roc_auc
+            # plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_logreg.png", y_test, y_test_pred_logreg, window)
+            print(f"\t\troc_auc_score: {roc_auc}")
 
-            except Exception as e:
-                printr(f"{e}")
+            # except Exception as e:
+            #     printr(f"models: {e}")
 
         for model in roc_auc_models_avg:
             roc_auc_models_avg[model] /= len(fetch_indices)

@@ -4,8 +4,9 @@ import pandas as pd
 
 
 def read_fif(filename: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filedata = mne.io.read_raw_fif(filename, verbose=False)
-
+    filedata = mne.io.read_raw_fif(filename, preload=True, verbose=False)
+    filedata = filedata.pick('eeg', verbose=False)
+    filedata = filedata.set_eeg_reference(ref_channels='average', verbose=False)
     times = filedata.times
     channel_names = np.array(filedata.ch_names)
     channel_data = filedata.get_data()
