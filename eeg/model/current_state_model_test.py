@@ -45,7 +45,9 @@ def blinks_window_count(blink_detection_list: np.ndarray, window_seconds: int):
     return blink_freq, times
 
 
-def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, compute_channels, times: np.ndarray):
+def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):
+    filter_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
+
     eeg_bands = {'Delta': (0, 4),
                  'Theta': (4, 8),
                  'Alpha': (8, 12),
@@ -54,7 +56,7 @@ def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, compute_c
 
     eeg_band_fft_list = []
 
-    for channel in compute_channels:
+    for channel in filter_channels:
         if channel in channel_names:
             signal = channel_data[channel_names == channel][0]
             eeg_band_fft = {'Delta': [],
@@ -86,8 +88,7 @@ def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, compute_c
     return eeg_band_fft_mean
 
 
-def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_data: np.ndarray, compute_channels, window_seconds: int):
-    # print(f"{fname} - {channel_names}")
+def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_data: np.ndarray, window_seconds: int):
     fp1 = channel_data[channel_names == "Fp1"][0]
     fp2 = channel_data[channel_names == "Fp2"][0]
 
@@ -104,7 +105,7 @@ def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_dat
 
     lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(fname, window=window_seconds // 60)
 
-    eeg_band_fft = get_freq_char(channel_names, channel_data, compute_channels, times=times)
+    eeg_band_fft = get_freq_char(channel_names, channel_data, times=times)
 
     times = times / 500
 
@@ -139,17 +140,74 @@ def plot_predict_result(save_fname, y_test, y_pred, window):
     plt.close()
 
 
+def fetch_file_features_labels(file_name: str,
+                          channel_names: np.ndarray,
+                          data: np.ndarray,
+                          window_seconds: int) -> tuple[list, list]:
+    features = []
+    labels = []
+    blink_freq, eeg_features, q, _ = fetch_eeg_characteristics(file_name,
+                                                               channel_names,
+                                                               data,
+                                                               window_seconds=window_seconds)
+    for i in range(len(blink_freq)):
+        x = [blink_freq[i]]
+        for feature in eeg_features:
+            x.append(eeg_features[feature][i])
+        features.append(x)
+        if q[i] != 1.0:
+            labels.append(q[i] // 0.25)
+        else:
+            labels.append(3.0)
+    return features, labels
+
+
+def train_test_formation(train_indices: list,
+                         test_idx: int,
+                         file_names: np.ndarray,
+                         file_channel_names: dict,
+                         file_data: dict,
+                         window_seconds: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    scaler = StandardScaler()
+    le = LabelEncoder()
+    x_train = []
+    y_train = []
+    for train_idx in train_indices:
+        file_name = file_names[train_idx]
+        features, labels = fetch_file_features_labels(file_name, file_channel_names[file_name],
+                                                      file_data[file_name], window_seconds=window_seconds)
+        x_train += features
+        y_train += labels
+    x_train = np.array(x_train)
+    y_train = np.array(y_train)
+    file_name = file_names[test_idx]
+    x_test, y_test = fetch_file_features_labels(file_name, file_channel_names[file_name],
+                                                file_data[file_name], window_seconds=window_seconds)
+    x_test = np.array(x_test)
+    y_test = np.array(y_test)
+    for label in np.unique(y_test):
+        if label not in y_train:
+            x_train = np.append(x_train, [x_test[y_test == label][0]], axis=0)
+            y_train = np.append(y_train, label)
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+    y_train = le.fit_transform(y_train)
+    y_test = le.transform(y_test)
+    return x_train, x_test, y_train, y_test
+
+
 if __name__ == "__main__":
-    name_files, name_files_trimmed = path.find_by_format(gcfg.PROJ_SORTED_PATH, '**/*.raw.fif.gz')
+    file_names, stripped_file_names = path.find_by_format(gcfg.PROJ_SORTED_PATH, '**/*.raw.fif.gz')
 
     printc("\nAvailable files:\n", "lg")
-    for i in range(len(name_files)):
-        print(f"[{i}] {name_files_trimmed[i]}")
+    for i in range(len(stripped_file_names)):
+        print(f"[{i}] {stripped_file_names[i]}")
     print("[-5] <stop>")
     print("[-1] <exit>")
     print()
 
     fetch_indices = []
+    fetch_files = []
 
     while True:
         input_option = int(input("Enter option: "))
@@ -160,25 +218,15 @@ if __name__ == "__main__":
         else:
             fetch_indices.append(input_option)
 
-    if len(fetch_indices) == 0:
-        exit(0)
+    file_channel_names = dict()
+    file_data = dict()
 
-    # compute_channels = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
-    # compute_channels = ['F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
-    compute_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
-
-    channel_names_list = []
-    channel_data_list = []
-    ordinal_indices = dict()
-
-    ordinal_idx = 0
     for idx in fetch_indices:
-        _, channel_names, channel_data = eeg.read_fif(name_files[idx])
-        # print(channel_names)
-        channel_names_list.append(channel_names)
-        channel_data_list.append(channel_data)
-        ordinal_indices[idx] = ordinal_idx
-        ordinal_idx += 1
+        _, channel_names, data = eeg.read_fif(file_names[idx])
+        file_name = file_names[idx]
+        file_channel_names[file_name] = channel_names
+        file_data[file_name] = data
+        fetch_files.append(file_name)
 
     roc_auc_windows_avg = []
 
@@ -189,115 +237,28 @@ if __name__ == "__main__":
             'LogisticRegression': 0.
         }
 
-        for test_idx in fetch_indices:
+        for test_idx in range(len(fetch_files)):
             train_indices = []
-            for i in fetch_indices:
-                if i != test_idx:
-                    train_indices.append(i)
+            for train_idx in range(len(fetch_files)):
+                if train_idx != test_idx:
+                    train_indices.append(train_idx)
 
             print("train:")
             for train_idx in train_indices:
-                print(name_files_trimmed[train_idx])
+                print(stripped_file_names[train_idx])
             print("test:")
-            printlg(name_files_trimmed[test_idx])
-            printlg(f"window: {window} m")
+            printlg(stripped_file_names[test_idx])
+            printlg(f"window: {window}")
 
-            x_train = []
-            y_train = []
-            x_test = []
-            y_test = []
+            x_train, x_test, y_train, y_test = train_test_formation(train_indices, test_idx, file_names,
+                                                                    file_channel_names, file_data, window_seconds)
 
-            for train_idx in train_indices:
-                try:
-                    blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[train_idx],
-                                                                                   channel_names_list[ordinal_indices[train_idx]],
-                                                                                   channel_data_list[ordinal_indices[train_idx]],
-                                                                                   compute_channels,
-                                                                                   window_seconds=window_seconds)
-                    x = []
-                    for i in range(len(times)):
-                        x.append(blink_freq[i])
-                        for band in eeg_band_fft:
-                            x.append(eeg_band_fft[band][i])
-                        x_train.append(x)
-                        if q[i] != 1.0:
-                            y_train.append(q[i] // 0.25)
-                        else:
-                            y_train.append(3.0)
-                        x = []
-                except Exception as e:
-                    printc(f"error with train file {name_files_trimmed[train_idx]}", 'r')
-                    printc(f"{e}", 'r')
-                    exit(1)
-
-            # categorical_y_train = categorical_encoder(y_train)
-            x_train = np.array(x_train)
-            y_train = np.array(y_train)
-
-            try:
-                blink_freq, eeg_band_fft, q, times = fetch_eeg_characteristics(name_files[test_idx],
-                                                                               channel_names_list[ordinal_indices[test_idx]],
-                                                                               channel_data_list[ordinal_indices[test_idx]],
-                                                                               compute_channels,
-                                                                               window_seconds=window_seconds)
-
-                x = []
-                for i in range(len(times)):
-                    x.append(blink_freq[i])
-                    for band in eeg_band_fft:
-                        x.append(eeg_band_fft[band][i])
-                    x_test.append(x)
-                    if q[i] != 1.0:
-                        y_test.append(q[i] // 0.25)
-                    else:
-                        y_test.append(3.0)
-                    x = []
-            except Exception as e:
-                printc(f"error with test file {name_files_trimmed[test_idx]}", 'r')
-                printc(f"{e}", 'r')
-                exit(1)
-
-            # categorical_y_test = categorical_encoder(y_test)
-            x_test = np.array(x_test)
-            y_test = np.array(y_test)
-
-            # Дополняю все классы
-            for label in np.unique(y_test):
-                if label not in y_train:
-                    x_train = np.append(x_train, [x_test[y_test == label][0]], axis=0)
-                    y_train = np.append(y_train, label)
-
-            for label in np.unique(y_train):
-                if label not in y_test:
-                    x_test = np.append(x_test, [x_train[y_train == label][0]], axis=0)
-                    y_test = np.append(y_test, label)
-
-            # print(f"\tx_train: {x_train.shape}")
-            # print(f"\ty_train: {y_train.shape}")
-            # print(f"\tcategorical_y_train: {categorical_y_train.shape}")
-            # print(f"\tx_test: {x_test.shape}")
-            # print(f"\ty_test: {y_test.shape}")
-            # print(f"\tcategorical_y_test: {categorical_y_test.shape}")
-
-            le = LabelEncoder()
-            y_train = le.fit_transform(y_train)
-            y_test = le.transform(y_test)
-
-            scaler = StandardScaler()
-            x_train = scaler.fit_transform(x_train)
-            x_test = scaler.transform(x_test)
-
-            # try:
             print(f"\tLogisticRegression")
             model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0).fit(x_train, y_train)
             y_pred = model.predict_proba(x_test)
             roc_auc = roc_auc_score(y_test, y_pred, multi_class='ovr')
             roc_auc_models_avg['LogisticRegression'] += roc_auc
-            # plot_predict_result(f"{name_files_trimmed[test_idx].split('/')[0]}_{name_files_trimmed[test_idx].split('/')[1]}_{window}_logreg.png", y_test, y_test_pred_logreg, window)
             print(f"\t\troc_auc_score: {roc_auc}")
-
-            # except Exception as e:
-            #     printr(f"models: {e}")
 
         for model in roc_auc_models_avg:
             roc_auc_models_avg[model] /= len(fetch_indices)
@@ -306,8 +267,7 @@ if __name__ == "__main__":
 
     print()
     printg("Mean Results")
-    print(compute_channels)
     for i in range(len(_WINDOWS)):
-        print(f"window: {_WINDOWS[i]} m")
+        print(f"window: {_WINDOWS[i]}")
         for model in roc_auc_windows_avg[i]:
             print(f"\t{model}: {roc_auc_windows_avg[i][model]}")
