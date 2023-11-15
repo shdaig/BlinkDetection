@@ -1,5 +1,3 @@
-from sklearn.neural_network import MLPClassifier
-
 import utils.global_configs as gcfg
 import utils.path as path
 import utils.eeg as eeg
@@ -11,15 +9,16 @@ import numpy as np
 from numba import njit
 import os
 from xgboost import XGBClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 import warnings
 warnings.filterwarnings("ignore")
 
-_WINDOWS = [3]
 _SAVE_PLOTS_PATH = "temp_plots"
 
 
@@ -45,7 +44,7 @@ def blinks_window_count(blink_detection_list: np.ndarray, window_seconds: int):
     return blink_freq, times
 
 
-def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):
+def get_freq_features(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):
     filter_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
 
     eeg_bands = {'Delta': (0, 4),
@@ -80,10 +79,16 @@ def get_freq_char(channel_names: np.ndarray, channel_data: np.ndarray, times: np
         mean_freq /= len(eeg_band_fft_list)
         eeg_band_fft_mean[band] = mean_freq
 
-    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta']
+    # print(eeg_band_fft_mean)
+
     eeg_band_fft_mean['Delta/Alpha'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Alpha']
-    # eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha']
-    # eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta']
+    eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha']
+
+    eeg_band_fft_mean['Delta/Beta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Beta']
+    eeg_band_fft_mean['Theta/Beta'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Beta']
+
+    eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta']
+    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta']
 
     return eeg_band_fft_mean
 
@@ -105,7 +110,7 @@ def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_dat
 
     lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(fname, window=window_seconds // 60)
 
-    eeg_band_fft = get_freq_char(channel_names, channel_data, times=times)
+    eeg_band_fft = get_freq_features(channel_names, channel_data, times=times)
 
     times = times / 500
 
@@ -141,30 +146,35 @@ def plot_predict_result(save_fname, y_test, y_pred, window):
 
 
 def fetch_file_features_labels(file_name: str,
-                          channel_names: np.ndarray,
-                          data: np.ndarray,
-                          window_seconds: int) -> tuple[list, list]:
+                              channel_names: np.ndarray,
+                              data: np.ndarray,
+                              window_seconds: int) -> tuple[list, list]:
     features = []
     labels = []
     blink_freq, eeg_features, q, _ = fetch_eeg_characteristics(file_name,
                                                                channel_names,
                                                                data,
                                                                window_seconds=window_seconds)
+    feature_filter = [0, 1, 2, 3, 5, 6]
+
     for i in range(len(blink_freq)):
         x = [blink_freq[i]]
         for feature in eeg_features:
             x.append(eeg_features[feature][i])
+        x = [x[j] for j in feature_filter]
+        # print(x)
         features.append(x)
         if q[i] != 1.0:
             labels.append(q[i] // 0.25)
         else:
             labels.append(3.0)
+
     return features, labels
 
 
 def train_test_formation(train_indices: list,
                          test_idx: int,
-                         file_names: np.ndarray,
+                         file_names: list,
                          file_channel_names: dict,
                          file_data: dict,
                          window_seconds: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -185,15 +195,28 @@ def train_test_formation(train_indices: list,
                                                 file_data[file_name], window_seconds=window_seconds)
     x_test = np.array(x_test)
     y_test = np.array(y_test)
+    # adding classes in train/test sets
     for label in np.unique(y_test):
         if label not in y_train:
             x_train = np.append(x_train, [x_test[y_test == label][0]], axis=0)
             y_train = np.append(y_train, label)
-    x_train = scaler.fit_transform(x_train)
-    x_test = scaler.transform(x_test)
+    for label in np.unique(y_train):
+        if label not in y_test:
+            x_test = np.append(x_test, [x_train[y_train == label][0]], axis=0)
+            y_test = np.append(y_test, label)
+    # x_train = scaler.fit_transform(x_train)
+    # x_test = scaler.transform(x_test)
     y_train = le.fit_transform(y_train)
     y_test = le.transform(y_test)
     return x_train, x_test, y_train, y_test
+
+
+def sum_score(storage: dict, model_name: str, score: float):
+    if model_name not in storage:
+        storage[model_name] = score
+    else:
+        storage[model_name] += score
+    return storage
 
 
 if __name__ == "__main__":
@@ -202,72 +225,106 @@ if __name__ == "__main__":
     printc("\nAvailable files:\n", "lg")
     for i in range(len(stripped_file_names)):
         print(f"[{i}] {stripped_file_names[i]}")
-    print("[-5] <stop>")
-    print("[-1] <exit>")
     print()
 
-    fetch_indices = []
-    fetch_files = []
+    users = ['borovensky', 'egipko', 'golenishev', 'kostyulin', 'msurkov', 'dshepelev']
+    # users = ['borovensky', 'dshepelev']
+    print('users for processing: ', users)
+    fetch_indices = {'borovensky': [0, 2, 3],
+                     'egipko': [5, 6, 7],
+                     'golenishev': [8, 9, 10],
+                     'kostyulin': [15, 17, 18],
+                     'msurkov': [22, 23, 24],
+                     'dshepelev': [25, 26, 27]}
 
-    while True:
-        input_option = int(input("Enter option: "))
-        if input_option == -5:
-            break
-        elif input_option == -1:
-            exit(0)
-        else:
-            fetch_indices.append(input_option)
+    windows_minutes = [3]
 
-    file_channel_names = dict()
-    file_data = dict()
+    for window_minutes in windows_minutes:
+        window_seconds = window_minutes * 60
 
-    for idx in fetch_indices:
-        _, channel_names, data = eeg.read_fif(file_names[idx])
-        file_name = file_names[idx]
-        file_channel_names[file_name] = channel_names
-        file_data[file_name] = data
-        fetch_files.append(file_name)
+        window_score = dict()
 
-    roc_auc_windows_avg = []
+        for user in users:
+            fetch_files = []
+            stripped_fetch_files = []
+            file_channel_names = dict()
+            file_data = dict()
+            user_score = dict()
 
-    for window in _WINDOWS:
-        window_seconds = 60 * window
+            for idx in fetch_indices[user]:
+                _, channel_names, data = eeg.read_fif(file_names[idx])
+                file_name = file_names[idx]
+                file_channel_names[file_name] = channel_names
+                file_data[file_name] = data
+                fetch_files.append(file_name)
+                stripped_fetch_files.append(stripped_file_names[idx])
 
-        roc_auc_models_avg = {
-            'LogisticRegression': 0.
-        }
+            # file-fold validation
+            for test_idx in range(len(fetch_files)):
+                train_indices = []
+                for train_idx in range(len(fetch_files)):
+                    if train_idx != test_idx:
+                        train_indices.append(train_idx)
 
-        for test_idx in range(len(fetch_files)):
-            train_indices = []
-            for train_idx in range(len(fetch_files)):
-                if train_idx != test_idx:
-                    train_indices.append(train_idx)
+                print("train:")
+                for train_idx in train_indices:
+                    print(stripped_fetch_files[train_idx])
+                print("test:")
+                printlg(f"{window_minutes} minute(s)")
+                printlg(user)
+                printlg(stripped_fetch_files[test_idx])
 
-            print("train:")
-            for train_idx in train_indices:
-                print(stripped_file_names[train_idx])
-            print("test:")
-            printlg(stripped_file_names[test_idx])
-            printlg(f"window: {window}")
+                x_train, x_test, y_train, y_test = train_test_formation(train_indices, test_idx, fetch_files,
+                                                                        file_channel_names, file_data, window_seconds)
 
-            x_train, x_test, y_train, y_test = train_test_formation(train_indices, test_idx, file_names,
-                                                                    file_channel_names, file_data, window_seconds)
+                # x = np.concatenate((x_train, x_test))
+                # kmeans = KMeans(n_clusters=len(y_train), random_state=0, n_init="auto").fit(x)
+                # x_train_kmeans_labels = kmeans.predict(x_train)[:, None]
+                # x_test_kmeans_labels = kmeans.predict(x_test)[:, None]
+                # x_train = np.concatenate((x_train, x_train_kmeans_labels), axis=1)
+                # x_test = np.concatenate((x_test, x_test_kmeans_labels), axis=1)
 
-            print(f"\tLogisticRegression")
-            model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0).fit(x_train, y_train)
-            y_pred = model.predict_proba(x_test)
-            roc_auc = roc_auc_score(y_test, y_pred, multi_class='ovr')
-            roc_auc_models_avg['LogisticRegression'] += roc_auc
-            print(f"\t\troc_auc_score: {roc_auc}")
+                # general_pred = np.zeros(y_test.shape)
 
-        for model in roc_auc_models_avg:
-            roc_auc_models_avg[model] /= len(fetch_indices)
+                model_name = "LogisticRegression"
+                print(f"\t{model_name}")
+                model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0).fit(x_train, y_train)
+                y_pred = model.predict_proba(x_test)
+                score = roc_auc_score(y_test, y_pred, multi_class='ovr')
+                sum_score(user_score, model_name=model_name, score=score)
+                print(f"\t\troc_auc_score: {score}")
+                # general_pred += y_pred
 
-        roc_auc_windows_avg.append(roc_auc_models_avg)
+                model_name = "XGBClassifier"
+                print(f"\t{model_name}")
+                model = XGBClassifier().fit(x_train, y_train)
+                y_pred = model.predict_proba(x_test)
+                score = roc_auc_score(y_test, y_pred, multi_class='ovr')
+                sum_score(user_score, model_name=model_name, score=score)
+                print(f"\t\troc_auc_score: {score}")
+                # general_pred += y_pred
 
-    print()
-    printg("Mean Results")
-    for i in range(len(_WINDOWS)):
-        print(f"window: {_WINDOWS[i]}")
-        for model in roc_auc_windows_avg[i]:
-            print(f"\t{model}: {roc_auc_windows_avg[i][model]}")
+                model_name = "MLPClassifier"
+                print(f"\t{model_name}")
+                model = MLPClassifier(hidden_layer_sizes=(200,),
+                                      activation='tanh',
+                                      random_state=1,
+                                      max_iter=500,
+                                      alpha=0.01,
+                                      solver='sgd').fit(x_train, y_train)
+                y_pred = model.predict_proba(x_test)
+                score = roc_auc_score(y_test, y_pred, multi_class='ovr')
+                sum_score(user_score, model_name=model_name, score=score)
+                print(f"\t\troc_auc_score: {score}")
+                # general_pred += y_pred
+
+            printcn(f"\t{user} result for {window_minutes} minute(s)")
+            for model in user_score:
+                user_score[model] /= len(fetch_files)
+                sum_score(window_score, model_name=model, score=user_score[model])
+                print(f"\t\t{model}: {user_score[model]}")
+
+        printg(f"Users result for {window_minutes} minute(s)")
+        for model in window_score:
+            window_score[model] /= len(users)
+            print(f"\t{model}: {window_score[model]}")

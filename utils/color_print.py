@@ -30,7 +30,7 @@ def printc(s: str, color: str = ''):
         _print_light_purple(s)
     elif color == 'p':
         _print_purple(s)
-    elif color == 'c':
+    elif color == 'cn':
         _print_cyan(s)
     elif color == 'lg':
         _print_light_gray(s)
@@ -40,6 +40,10 @@ def printc(s: str, color: str = ''):
 
 def printg(s: str):
     _print_green(s)
+
+
+def printcn(s: str):
+    _print_cyan(s)
 
 
 def printr(s: str):
