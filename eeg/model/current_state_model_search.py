@@ -3,15 +3,15 @@ import utils.path as path
 import utils.eeg as eeg
 from utils.color_print import *
 import utils.reaction_utils as ru
+import utils.blink as blink
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numba import njit
 import os
-from xgboost import XGBClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 
@@ -20,66 +20,17 @@ warnings.filterwarnings("ignore")
 
 _SAVE_PLOTS_PATH = "temp_plots"
 
-
-@njit
-def blinks_window_count(blink_detection_list: np.ndarray, window_seconds: int):
-    times, blink_freq = [], []
-    blink_count, time_threshold = 0, 500 * window_seconds
-    t = 0
-    for i in range(blink_detection_list.shape[0]):
-        if t >= time_threshold or i == blink_detection_list.shape[0] - 1:
-            times.append(i)
-            blink_freq.append(blink_count)
-            blink_count, t = 0, 0
-        elif blink_detection_list[i] == 1:
-            blink_count += 1
-        t += 1
-
-    return blink_freq, times
-
-
-def get_freq_features(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):
-    filter_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
-    eeg_bands = {'Delta': (0, 4), 'Theta': (4, 8), 'Alpha': (8, 12), 'Beta': (12, 30)}
-    fft_times = np.insert(times, 0, 0)
-
-    eeg_band_fft_list = []
-
-    for channel in filter_channels:
-        if channel in channel_names:
-            signal = channel_data[channel_names == channel][0]
-            eeg_band_fft = {band: [] for band in eeg_bands}
-            for t in range(len(fft_times) - 1):
-                fft_vals = np.absolute(np.fft.rfft(signal[fft_times[t]:fft_times[t + 1]]))
-                for band in eeg_bands:
-                    fft_freq = np.fft.rfftfreq(len(fft_vals), 1.0 / 500)
-                    freq_ix = np.where((fft_freq >= eeg_bands[band][0]) & (fft_freq <= eeg_bands[band][1]))[0]
-                    eeg_band_fft[band].append(np.mean(fft_vals[freq_ix]))
-
-            eeg_band_fft_list.append(eeg_band_fft)
-
-    eeg_band_fft_mean = {band: np.mean([fft_list[band] for fft_list in eeg_band_fft_list], axis=0)
-                         for band in eeg_bands}
-
-    eeg_band_fft_mean['Delta/Alpha'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Alpha']
-    eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha']
-    eeg_band_fft_mean['Delta/Beta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Beta']
-    eeg_band_fft_mean['Theta/Beta'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Beta']
-    eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta']
-    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta']
-
-    return eeg_band_fft_mean
-
+feature_filter = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 def fetch_eeg_characteristics(fname: str, channel_names: np.ndarray, channel_data: np.ndarray, window_seconds: int):
     fp1, fp2 = channel_data[channel_names == "Fp1"][0], channel_data[channel_names == "Fp2"][0]
     fp_avg = np.clip((fp1 + fp2) / 2, -0.00015, 0.00015)
-    blink_detection_list = eeg.square_pics_search(fp_avg)
-    blink_freq, times = blinks_window_count(blink_detection_list, window_seconds=window_seconds)
+    blink_detection_list = blink.square_pics_search(fp_avg)
+    blink_freq, times = blink.blinks_window_count(blink_detection_list, window_seconds=window_seconds)
     blink_freq, times = np.array(blink_freq), np.array(times)
     lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(fname,
                                                                                             window=window_seconds // 60)
-    eeg_band_fft = get_freq_features(channel_names, channel_data, times=times)
+    eeg_band_fft = eeg.get_frequency_features(channel_names, channel_data, times=times)
     times = times / 500
     start_idx, end_idx = np.where(times > react_range[0])[0][0], np.where(times > react_range[-1])[0][0]
     blink_freq = blink_freq[start_idx:end_idx]
@@ -116,7 +67,6 @@ def fetch_file_features_labels(file_name: str,
     features, labels = [], []
     blink_freq, eeg_features, q, _ = fetch_eeg_characteristics(file_name, channel_names,
                                                                data, window_seconds=window_seconds)
-    feature_filter = [0, 1, 2, 3, 4, 5, 6]
 
     for i in range(len(blink_freq)):
         x = [blink_freq[i]] + [eeg_features[feature][i] for feature in eeg_features]
@@ -166,20 +116,23 @@ if __name__ == "__main__":
         print(f"[{i}] {name}")
     print()
 
-    users = ['1', '2', '3', '4', '5', '6']
+    users = ['b', 'e', 'g', 'k', 'm', 'd']
     print('users for processing: ', users)
-    fetch_indices = {'1': [0, 2, 3],
-                     '2': [5, 6, 7],
-                     '3': [8, 9, 10],
-                     '4': [15, 17, 18],
-                     '5': [22, 23, 24],
-                     '6': [25, 26, 27]}
+    fetch_indices = {'b': [0, 2, 3],
+                     'e': [5, 6, 7],
+                     'g': [8, 9, 10],
+                     'k': [15, 17, 18],
+                     'm': [22, 23, 24],
+                     'd': [25, 26, 27]}
 
     windows_minutes = [3]
 
     for window_minutes in windows_minutes:
         window_seconds = window_minutes * 60
         window_score = dict()
+
+        logreg_coef = np.zeros(len(feature_filter))
+        rf_feature_importances = np.zeros(len(feature_filter))
 
         for user in users:
             fetch_files, stripped_fetch_files = [], []
@@ -214,14 +167,16 @@ if __name__ == "__main__":
                 y_pred = model.predict_proba(x_test)
                 score = roc_auc_score(y_test, y_pred, multi_class='ovr')
                 sum_score(user_score, model_name=model_name, score=score)
+                logreg_coef += np.sum(np.abs(model.coef_), axis=0)
                 print(f"\t\troc_auc_score: {score}")
 
-                model_name = "XGBClassifier"
+                model_name = "RandomForestClassifier"
                 print(f"\t{model_name}")
-                model = XGBClassifier().fit(x_train, y_train)
+                model = RandomForestClassifier(n_estimators=100).fit(x_train, y_train)
                 y_pred = model.predict_proba(x_test)
                 score = roc_auc_score(y_test, y_pred, multi_class='ovr')
                 sum_score(user_score, model_name=model_name, score=score)
+                rf_feature_importances += model.feature_importances_
                 print(f"\t\troc_auc_score: {score}")
 
                 model_name = "MLPClassifier"
@@ -247,3 +202,8 @@ if __name__ == "__main__":
         for model in window_score:
             window_score[model] /= len(users)
             print(f"\t{model}: {window_score[model]}")
+
+        print(f"logreg_coef: {logreg_coef}")
+        print(f"sorted_coef: {logreg_coef.argsort()}")
+        print(f"rf_feature_importances: {rf_feature_importances}")
+        print(f"sorted_rf: {rf_feature_importances.argsort()}")
