@@ -2,7 +2,7 @@ import glob
 import multiprocessing
 import os
 import moviepy.editor as mp
-from utils.color_print import printc
+from utils.color_print import *
 import utils.global_configs as gcfg
 
 
@@ -52,6 +52,8 @@ for name_file in name_files:
             num_processing_files += 1
         else:
             printc(f"video from [{save_file_path}] already exists", 'y')
+    else:
+        printr(f"video for [{name_file}] is broken")
 
 arg_list.append(batch.copy())
 
