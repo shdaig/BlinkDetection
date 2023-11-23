@@ -168,7 +168,7 @@ if __name__ == "__main__":
 
                 model_name = "LogisticRegression"
                 print(f"\t{model_name}")
-                model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0, random_state=0).fit(x_train, y_train)
+                model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0, class_weight='balanced', random_state=0).fit(x_train, y_train)
                 y_pred = model.predict_proba(x_test)
                 score = accuracy_score(y_test, y_pred.argmax(axis=1))
                 sum_score(user_score, model_name=model_name, score=score)

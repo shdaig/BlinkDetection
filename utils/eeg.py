@@ -33,6 +33,7 @@ def get_frequency_features(channel_names: np.ndarray, channel_data: np.ndarray, 
 
             eeg_band_fft_list.append(eeg_band_fft)
 
+    # mean or max
     eeg_band_fft_mean = {band: np.mean([fft_list[band] for fft_list in eeg_band_fft_list], axis=0)
                          for band in eeg_bands}
 
