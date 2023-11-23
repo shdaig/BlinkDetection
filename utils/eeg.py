@@ -1,22 +1,21 @@
 import mne
 import numpy as np
-import pandas as pd
 
 
-def read_fif(filename: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filedata = mne.io.read_raw_fif(filename, preload=True, verbose=False)
-    filedata = filedata.pick('eeg', verbose=False)
-    filedata = filedata.set_eeg_reference(ref_channels='average', verbose=False)
-    times = filedata.times
-    channel_names = np.array(filedata.ch_names)
-    channel_data = filedata.get_data()
+def read_fif(filename: str) -> tuple[mne.io.fiff.raw.Raw, np.ndarray, np.ndarray, np.ndarray]:
+    raw = mne.io.read_raw_fif(filename, preload=True, verbose=False)
+    raw = raw.pick('eeg', verbose=False)
+    raw = raw.set_eeg_reference(ref_channels='average', verbose=False)
+    times = raw.times
+    channel_names = np.array(raw.ch_names)
+    channel_data = raw.get_data()
 
-    return times, channel_names, channel_data
+    return raw, times, channel_names, channel_data
 
 
 def get_frequency_features(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):
     filter_channels = ['C3', 'C4', 'P3', 'P4', 'Pz', 'Cz', 'T3', 'T4', 'O1', 'O2']
-    eeg_bands = {'Delta': (0, 4), 'Theta': (4, 8), 'Alpha': (8, 12), 'Beta': (12, 30)}
+    eeg_bands = {'Delta': (0, 4), 'Theta': (4, 8), 'Alpha': (8, 12), 'Beta': (12, 30), 'Gamma': (30, 100)}
     fft_times = np.insert(times, 0, 0)
 
     eeg_band_fft_list = []
@@ -37,12 +36,30 @@ def get_frequency_features(channel_names: np.ndarray, channel_data: np.ndarray, 
     eeg_band_fft_mean = {band: np.mean([fft_list[band] for fft_list in eeg_band_fft_list], axis=0)
                          for band in eeg_bands}
 
-    eeg_band_fft_mean['Delta/Alpha'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Alpha']
-    eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha']
-    eeg_band_fft_mean['Delta/Beta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Beta']
-    eeg_band_fft_mean['Theta/Beta'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Beta']
-    eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta']
-    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta']
+    eeg_band_fft_mean['Delta/Theta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Theta'] # 6
+    eeg_band_fft_mean['Delta/Alpha'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Alpha'] # 7
+    eeg_band_fft_mean['Delta/Beta'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Beta'] # 8
+    eeg_band_fft_mean['Delta/Gamma'] = eeg_band_fft_mean['Delta'] / eeg_band_fft_mean['Gamma'] # 9
+
+    eeg_band_fft_mean['Theta/Delta'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Delta'] # 10
+    eeg_band_fft_mean['Theta/Alpha'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Alpha'] # 11
+    eeg_band_fft_mean['Theta/Beta'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Beta'] # 12
+    eeg_band_fft_mean['Theta/Gamma'] = eeg_band_fft_mean['Theta'] / eeg_band_fft_mean['Gamma'] # 13
+
+    eeg_band_fft_mean['Alpha/Delta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Delta'] # 14
+    eeg_band_fft_mean['Alpha/Theta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Theta'] # 15
+    eeg_band_fft_mean['Alpha/Beta'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Beta'] # 16
+    eeg_band_fft_mean['Alpha/Gamma'] = eeg_band_fft_mean['Alpha'] / eeg_band_fft_mean['Gamma'] # 17
+
+    eeg_band_fft_mean['Beta/Delta'] = eeg_band_fft_mean['Beta'] / eeg_band_fft_mean['Delta'] # 18
+    eeg_band_fft_mean['Beta/Theta'] = eeg_band_fft_mean['Beta'] / eeg_band_fft_mean['Theta'] # 19
+    eeg_band_fft_mean['Beta/Alpha'] = eeg_band_fft_mean['Beta'] / eeg_band_fft_mean['Alpha'] # 20
+    eeg_band_fft_mean['Beta/Gamma'] = eeg_band_fft_mean['Beta'] / eeg_band_fft_mean['Gamma'] # 21
+
+    eeg_band_fft_mean['Gamma/Delta'] = eeg_band_fft_mean['Gamma'] / eeg_band_fft_mean['Delta'] # 22
+    eeg_band_fft_mean['Gamma/Theta'] = eeg_band_fft_mean['Gamma'] / eeg_band_fft_mean['Theta'] # 23
+    eeg_band_fft_mean['Gamma/Alpha'] = eeg_band_fft_mean['Gamma'] / eeg_band_fft_mean['Alpha'] # 24
+    eeg_band_fft_mean['Gamma/Beta'] = eeg_band_fft_mean['Gamma'] / eeg_band_fft_mean['Beta'] # 25
 
     return eeg_band_fft_mean
 

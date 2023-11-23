@@ -69,49 +69,45 @@ def quality2(df, window=timedelta(minutes=3), calibrate=20, ys=False):
     else: return np.array(res)
 
 
-def qual_plot_data(fname, window=3, raw=None):
-    cache = os.path.join(os.path.dirname(fname), 'quality_plot.pickle')
-    # if os.path.exists(cache):
-    if False:
-        with open(cache, 'rb') as f:
-            return pickle.load(f)
-    else:
-        if raw is None:
-            raw = mne.io.read_raw_fif(fname, verbose=False)
-            raw.load_data(verbose=False)
-            raw = raw.set_eeg_reference(ref_channels='average', verbose=False)
+def qual_plot_data(fname=None, window=3, raw=None):
+    if raw is None:
+        raw = mne.io.read_raw_fif(fname, verbose=False)
+        raw.load_data(verbose=False)
+        raw = raw.set_eeg_reference(ref_channels='average', verbose=False)
 
-        anns = raw.annotations.to_data_frame()
-        events, events_id = mne.events_from_annotations(raw, verbose=False)
-        react_mark, err_mark = events_id['reaction'], events_id['error']
-        stim1, stim2, stim3 = events_id['stim1'], events_id['stim2'], events_id['stim3']
-        try: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False) # err_mark
-        except: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False, event_repeated='merge')
-        sfreq = raw.info['sfreq']
-        first_mark_time = epochs.events[0, 0]/sfreq
+    # anns = raw.annotations.to_data_frame()
+    events, events_id = mne.events_from_annotations(raw, verbose=False)
+    react_mark, err_mark = events_id['reaction'], events_id['error']
+    stim1, stim2, stim3 = events_id['stim1'], events_id['stim2'], events_id['stim3']
+    try: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False) # err_mark
+    except: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False, event_repeated='merge')
+    sfreq = raw.info['sfreq']
+    first_mark_time = epochs.events[0, 0]/sfreq
 
-        lags, lag_times = reaction_lags(epochs.events[:, -1], epochs.events[:, 0]/sfreq, first_mark_time, mark_set=[stim1, stim2], response=react_mark, check_err=err_mark)
-        try: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False) 
-        except: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False, event_repeated='merge') 
-        lags2, lag_times2 = reaction_lags(epochs.events[:, -1], epochs.events[:, 0]/sfreq, first_mark_time, mark_set=[stim1, stim2, stim3], response=err_mark)
+    lags, lag_times = reaction_lags(epochs.events[:, -1], epochs.events[:, 0]/sfreq, first_mark_time, mark_set=[stim1, stim2], response=react_mark, check_err=err_mark)
+    try: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False)
+    except: epochs = mne.Epochs(raw, events, event_id=[react_mark, stim1, stim2, stim3, err_mark], tmin=0, tmax=.5, preload=False, baseline=None, verbose=False, event_repeated='merge')
+    lags2, lag_times2 = reaction_lags(epochs.events[:, -1], epochs.events[:, 0]/sfreq, first_mark_time, mark_set=[stim1, stim2, stim3], response=err_mark)
 
-        common_times = np.concatenate((lag_times, lag_times2))+first_mark_time
-        react_mask = np.zeros(len(common_times))
-        react_mask[:len(lag_times)] = 1
-        err_mask = np.zeros(len(common_times))
-        err_mask[len(lag_times):] = 1
-        sortidx = np.argsort(common_times)
-        lags_common = np.concatenate((lags, lags2))
+    common_times = np.concatenate((lag_times, lag_times2))+first_mark_time
+    react_mask = np.zeros(len(common_times))
+    react_mask[:len(lag_times)] = 1
+    err_mask = np.zeros(len(common_times))
+    err_mask[len(lag_times):] = 1
+    sortidx = np.argsort(common_times)
+    lags_common = np.concatenate((lags, lags2))
 
-        datedum = datetime.combine(datetime.today().date(), time(0, 0, 0))
-        df = pd.DataFrame({'reaction': react_mask[sortidx], 'error': err_mask[sortidx], 'lags': lags_common[sortidx]}, index=[datedum + timedelta(seconds=el) for el in common_times[sortidx]])
-        q = quality2(df, window=timedelta(minutes=window), calibrate=20)
-        react_range = common_times[sortidx]
-        
-        with open(cache, 'wb') as f:
-            to_save = (lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q)
-            pickle.dump(to_save, f)
-        return to_save
+    datedum = datetime.combine(datetime.today().date(), time(0, 0, 0))
+    df = pd.DataFrame({'reaction': react_mask[sortidx], 'error': err_mask[sortidx], 'lags': lags_common[sortidx]}, index=[datedum + timedelta(seconds=el) for el in common_times[sortidx]])
+    q = quality2(df, window=timedelta(minutes=window), calibrate=20)
+    react_range = common_times[sortidx]
+
+    # with open(cache, 'wb') as f:
+    #     to_save = (lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q)
+    #     pickle.dump(to_save, f)
+    to_save = (lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q)
+
+    return to_save
     
     
 def plot_qual(lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q, times, blink_data):

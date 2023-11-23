@@ -1,5 +1,6 @@
 data/
 config.ini
+eeg/model/users.json
 .ipynb_checkpoints
 __pycache__/
 temp_*/
