@@ -2,15 +2,20 @@ import mne
 import numpy as np
 
 
-def read_fif(filename: str) -> tuple[mne.io.fiff.raw.Raw, np.ndarray, np.ndarray, np.ndarray]:
+def read_fif(filename: str) -> mne.io.Raw:
     raw = mne.io.read_raw_fif(filename, preload=True, verbose=False)
     raw = raw.pick('eeg', verbose=False)
     raw = raw.set_eeg_reference(ref_channels='average', verbose=False)
-    times = raw.times
-    channel_names = np.array(raw.ch_names)
-    channel_data = raw.get_data()
 
-    return raw, times, channel_names, channel_data
+    return raw
+
+
+def fetch_channels(raw: mne.io.Raw) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    :param raw: Raw data from fif file
+    :return: Time samples, channel names, channel data
+    """
+    return raw.times, np.array(raw.ch_names), raw.get_data()
 
 
 def get_frequency_features(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):

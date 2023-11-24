@@ -16,7 +16,8 @@ def main():
     idx = int(input("Enter idx: "))
     if idx == -1:
         exit(0)
-    _, times, channel_names, data = eeg.read_fif(file_names[idx])
+    raw = eeg.read_fif(file_names[idx])
+    times, channel_names, data = eeg.fetch_channels(raw)
     fp1, fp2 = data[channel_names == "Fp1"][0], data[channel_names == "Fp2"][0]
     fp_avg = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
     times = times / 60
