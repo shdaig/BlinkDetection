@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import scipy.signal as scsignal
 
+
 def moving_avg(array, window):
     numbers_series = pd.Series(array)
     windows = numbers_series.rolling(window)
@@ -60,7 +61,7 @@ def main():
     fp1, fp2 = data[channel_names == "Fp1"][0], data[channel_names == "Fp2"][0]
 
     fp = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
-    fp = -fp
+    # fp = -fp
     times = times / 60
 
     avg_window = round((500 * 0.02)) + round(500 * 0.02) % 2
