@@ -60,9 +60,14 @@ class ResultStorage:
 def fetch_eeg_characteristics(raw: mne.io.Raw, window_seconds: int):
     _, channel_names, channel_data = eeg.fetch_channels(raw)
     fp1, fp2 = channel_data[channel_names == "Fp1"][0], channel_data[channel_names == "Fp2"][0]
-    fp_avg = np.clip((fp1 + fp2) / 2, -0.00015, 0.00015)
-    blink_detection_list = blink.square_pics_search(fp_avg)
+    fp_avg = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
+
+    # blink_detection_list = blink.square_pics_search(fp_avg)
+    # blink_freq, times = blink.blinks_window_count(blink_detection_list, window_seconds=window_seconds)
+
+    blink_detection_list = blink.detect_blinks(fp_avg)
     blink_freq, times = blink.blinks_window_count(blink_detection_list, window_seconds=window_seconds)
+
     blink_freq, times = np.array(blink_freq), np.array(times)
     _, _, _, _, _, react_range, q = ru.qual_plot_data(raw=raw, window=window_seconds // 60)
     eeg_band_fft = eeg.get_frequency_features(channel_names, channel_data, times=times)

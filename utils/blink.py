@@ -1,5 +1,9 @@
 from numba import njit
 import numpy as np
+import pandas as pd
+import scipy.signal as signal
+
+from utils import eeg
 
 
 @njit
@@ -45,5 +49,78 @@ def square_pics_search(raw_signal_data: np.ndarray) -> np.ndarray:
 
     result_array = np.zeros((data.shape[0],))
     result_array[max_indices] = 1
+
+    return result_array
+
+
+def bandpass_filter(data, lowcut, highcut, signal_freq, filter_order):
+    nyquist_freq = 0.5 * signal_freq
+    low = lowcut / nyquist_freq
+    high = highcut / nyquist_freq
+    b, a = signal.butter(filter_order, [low, high], btype="band")
+    y = signal.lfilter(b, a, data)
+    return y
+
+
+def findpeaks(data, spacing=1, limit=None):
+    len = data.size
+    x = np.zeros(len + 2 * spacing)
+    x[:spacing] = data[0] - 1.e-6
+    x[-spacing:] = data[-1] - 1.e-6
+    x[spacing:spacing + len] = data
+    peak_candidate = np.zeros(len)
+    peak_candidate[:] = True
+    for s in range(spacing):
+        start = spacing - s - 1
+        h_b = x[start: start + len]  # before
+        start = spacing
+        h_c = x[start: start + len]  # central
+        start = spacing + s + 1
+        h_a = x[start: start + len]  # after
+        peak_candidate = np.logical_and(peak_candidate, np.logical_and(h_c > h_b, h_c > h_a))
+
+    ind = np.argwhere(peak_candidate)
+    ind = ind.reshape(ind.size)
+    if limit is not None:
+        ind = ind[data[ind] > limit]
+    return ind
+
+
+def moving_avg(array, window):
+    numbers_series = pd.Series(array)
+    windows = numbers_series.rolling(window)
+    moving_averages = windows.mean()
+    moving_averages_list = moving_averages.tolist()
+    final_list = moving_averages_list[window - 1:]
+
+    addition = [final_list[0] for _ in range(window - 1)]
+    final_list = addition + final_list
+
+    return np.array(final_list)
+
+
+def detect_blinks(fp):
+    fp = -fp
+
+    filtered_fp = bandpass_filter(fp, lowcut=0.1,
+                                  highcut=3.0,
+                                  signal_freq=500,
+                                  filter_order=1)
+
+    differentiated_fp = np.ediff1d(filtered_fp)
+
+    squared_fp = (differentiated_fp * 1000) ** 2
+
+    integrated_fp = np.convolve(squared_fp, np.ones(60))
+
+    q1 = np.percentile(integrated_fp[:500 * 60], 25)
+    q3 = np.percentile(integrated_fp[:500 * 60], 75)
+    threshold = q3 + (q3 - q1) * 5
+    detected_peaks_indices = findpeaks(data=integrated_fp,
+                                       limit=threshold,
+                                       spacing=50)
+
+    result_array = np.zeros((fp.shape[0],))
+    result_array[detected_peaks_indices] = 1
 
     return result_array
