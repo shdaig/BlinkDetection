@@ -1,4 +1,7 @@
+import os
+import shutil
 import pandas
+from PIL import Image
 
 from utils.color_print import *
 import utils.path as path
@@ -13,8 +16,10 @@ from keras import layers, losses
 from keras.models import Model
 
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
-import plotly.express as px
+from sklearn.manifold import TSNE
 
 
 class BlinkAutoencoder(Model):
@@ -36,6 +41,17 @@ class BlinkAutoencoder(Model):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
+
+
+def mkdir(dirname):
+    os.mkdir(dirname)
+    print(f"Directory '{dirname}' has been created.")
+
+
+def rmdir(dirname):
+    if os.path.exists(dirname):
+        shutil.rmtree(dirname, ignore_errors=True)
+        print(f"Directory '{dirname}' already existed and has been removed.")
 
 
 def main():
@@ -62,7 +78,7 @@ def main():
     x_windows = np.array([fp_window.to_list() for fp_window in fp_rolling][window // step:])
     print(x_windows.shape)
 
-    train_data, test_data, _, _ = train_test_split(x_windows, np.zeros(x_windows.shape[0]), test_size=0.2, random_state=21)
+    train_data, test_data, _, _ = train_test_split(x_windows, np.zeros(x_windows.shape[0]), test_size=0.05, random_state=21)
 
     min_val = tf.reduce_min(train_data)
     max_val = tf.reduce_max(train_data)
@@ -84,12 +100,51 @@ def main():
                     validation_data=(test_data, test_data))
 
     encoded_data = autoencoder.encoder(test_data).numpy()
-    df = pandas.DataFrame({'x': encoded_data[:, 0],
-                           'y': encoded_data[:, 1],
-                           'z': encoded_data[:, 2]})
 
-    fig = px.scatter_3d(df, x='x', y='y', z='z')
-    fig.show()
+    decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+
+    print(decoded_test_data.shape)
+
+    # viz_mose = "tsne"
+    viz_mose = "imgs"
+
+    if viz_mose == "tsne":
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+        reduced_data = tsne.fit_transform(encoded_data)
+
+        fig = go.Figure()
+        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+        fig.show()
+    elif viz_mose == "imgs":
+        decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+        print(decoded_test_data.shape)
+        rmdir("temp_decoded_plots")
+        mkdir("temp_decoded_plots")
+        for i in range(0, decoded_test_data.shape[0], 50):
+            plt.plot(test_data[i])
+            plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
+            plt.close()
+
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+        reduced_data = tsne.fit_transform(encoded_data)
+
+        fig = go.Figure()
+        for i in range(0, decoded_test_data.shape[0], 50):
+            fig.add_layout_image(
+                source=Image.open(f"temp_decoded_plots/{i}.png"),
+                xanchor="center",
+                yanchor="middle",
+                x=reduced_data[i, 0],
+                y=reduced_data[i, 1],
+                xref="x",
+                yref="y",
+                sizex=5,
+                sizey=5,
+                opacity=1.0,
+                layer="above"
+            )
+        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+        fig.show()
 
 
 if __name__ == "__main__":

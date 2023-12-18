@@ -5,4 +5,3 @@ users*.json
 __pycache__/
 temp_*/
 .idea/
-dict_test.py
