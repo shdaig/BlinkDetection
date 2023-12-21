@@ -22,20 +22,35 @@ import scipy.signal as signal
 from sklearn.manifold import TSNE
 
 
-class BlinkAutoencoder(Model):
+class BlinkAutoencoder1DConv(Model):
     def __init__(self, latent_dim, shape):
-        super(BlinkAutoencoder, self).__init__()
+        super(BlinkAutoencoder1DConv, self).__init__()
         self.latent_dim = latent_dim
         self.shape = shape
         self.encoder = tf.keras.Sequential([
-          layers.Dense(32, activation="relu"),
-          layers.Dense(16, activation="relu"),
-          layers.Dense(latent_dim, activation="relu")])
+            layers.Input(shape=(self.shape, 1)),  # Input for 1D data
+            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.MaxPool1D(pool_size=2),
+            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.MaxPool1D(pool_size=2),
+            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.MaxPool1D(pool_size=2),
+            layers.Flatten(),
+            layers.Dense(self.latent_dim, activation="relu")
+        ])
 
         self.decoder = tf.keras.Sequential([
-          layers.Dense(16, activation="relu"),
-          layers.Dense(32, activation="relu"),
-          layers.Dense(350, activation="sigmoid")])
+            layers.Reshape((self.latent_dim, 1)),
+            layers.UpSampling1D(size=2),
+            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.UpSampling1D(size=2),
+            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.UpSampling1D(size=2),
+            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.Flatten(),
+            layers.Dense(self.shape, activation="relu"),
+            layers.Reshape((self.shape, 1))
+        ])
 
     def call(self, x):
         encoded = self.encoder(x)
@@ -104,11 +119,11 @@ def main():
 
     shape = train_data.shape[1]
     latent_dim = 5
-    autoencoder = BlinkAutoencoder(latent_dim, shape)
+    autoencoder = BlinkAutoencoder1DConv(latent_dim, shape)
     autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
 
     autoencoder.fit(train_data, train_data,
-                    epochs=20,
+                    epochs=5,
                     batch_size=512,
                     shuffle=True,
                     validation_data=(test_data, test_data))
