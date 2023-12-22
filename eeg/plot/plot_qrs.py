@@ -77,9 +77,9 @@ def main():
     # ma_fp = moving_avg(fp, window=avg_window)
 
     filtered_fp = bandpass_filter(fp, lowcut=0.1,
-                                  highcut=3.0,
+                                  highcut=30.0,
                                   signal_freq=500,
-                                  filter_order=1)
+                                  filter_order=3)
 
     differentiated_fp = np.ediff1d(filtered_fp)
 
@@ -103,13 +103,13 @@ def main():
         )
     )
     fig = go.Figure(layout=layout)
-    # fig.add_scatter(y=fp, mode='lines', name="fp")
+    fig.add_scatter(y=fp, mode='lines', name="fp")
     fig.add_scatter(y=filtered_fp, mode='lines', name="filtered_fp")
     # fig.add_scatter(y=differentiated_fp, mode='lines', name="differentiated_fp")
     # fig.add_scatter(y=squared_fp, mode='lines', name="squared_fp")
-    fig.add_scatter(y=integrated_fp, mode='lines', name="integrated_fp")
-    fig.add_scatter(x=detected_peaks_indices, y=detected_peaks_values, mode='markers', name="detected_peaks_values")
-    fig.add_scatter(y=np.full(filtered_fp.shape, threshold), mode='lines', name="threshold")
+    # fig.add_scatter(y=integrated_fp, mode='lines', name="integrated_fp")
+    # fig.add_scatter(x=detected_peaks_indices, y=detected_peaks_values, mode='markers', name="detected_peaks_values")
+    # fig.add_scatter(y=np.full(filtered_fp.shape, threshold), mode='lines', name="threshold")
     fig.show()
 
 

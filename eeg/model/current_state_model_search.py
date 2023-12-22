@@ -1,5 +1,8 @@
 import json
+import os
 
+import matplotlib.pyplot as plt
+import numpy as np
 import mne
 
 import utils.global_configs as gcfg
@@ -8,53 +11,18 @@ from utils.color_print import *
 import utils.reaction_utils as ru
 import utils.blink as blink
 
-import matplotlib.pyplot as plt
-import numpy as np
-import os
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import balanced_accuracy_score, accuracy_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import ParameterGrid
 
 import warnings
 warnings.filterwarnings("ignore")
 
-_SAVE_PLOTS_PATH = "temp_plots"
 
 feature_filter = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
-
-
-class ResultStorage:
-    def __init__(self):
-        self.storage = dict()
-
-    def _add_node(self, inner_dict, nodes, value):
-        if len(nodes) > 1:
-            if nodes[0] not in inner_dict:
-                inner_dict[nodes[0]] = dict()
-            return self._add_node(inner_dict[nodes[0]], nodes[1:], value)
-        else:
-            if nodes[0] not in inner_dict:
-                inner_dict[nodes[0]] = []
-            inner_dict[nodes[0]].append(value)
-
-    def _mean_node(self, inner_dict):
-        inner_dict["mean"] = 0.0
-        for node in inner_dict:
-            if type(inner_dict[node]) == list:
-                inner_dict["mean"] = sum(inner_dict[node]) / len(inner_dict[node])
-                return inner_dict["mean"]
-            elif node != "mean":
-                inner_dict["mean"] += self._mean_node(inner_dict[node])
-        inner_dict["mean"] /= len(inner_dict) - 1
-        return inner_dict["mean"]
-
-    def add(self, value, nodes):
-        return self._add_node(self.storage, nodes, value)
-
-    def mean(self):
-        return self._mean_node(self.storage)
 
 
 def fetch_eeg_characteristics(raw: mne.io.Raw, window_seconds: int):
@@ -79,25 +47,6 @@ def fetch_eeg_characteristics(raw: mne.io.Raw, window_seconds: int):
         eeg_band_fft[band] = eeg_band_fft[band][start_idx:end_idx]
 
     return blink_freq, eeg_band_fft, q, times
-
-
-def categorical_encoder(y, num_classes=4):
-    encoded_y = np.eye(num_classes)[y.astype(int)]
-    return encoded_y
-
-
-def plot_predict_result(save_fname, y_test, y_pred, window):
-    if not os.path.exists(_SAVE_PLOTS_PATH):
-        os.mkdir(_SAVE_PLOTS_PATH)
-    save_path = os.path.join(_SAVE_PLOTS_PATH, save_fname)
-    x = np.arange(len(y_test) - 1) * window
-    y_pred_numeric = np.argmax(y_pred, axis=1)
-    plt.figure(figsize=(16, 6))
-    plt.plot(x, y_test[:-1], label='y_test')
-    plt.plot(x, y_pred_numeric[:-1], label='y_pred')
-    plt.legend()
-    plt.savefig(save_path)
-    plt.close()
 
 
 def fetch_file_features_labels(raw: mne.io.fiff.raw.Raw, window_seconds: int) -> tuple[list, list]:
@@ -140,95 +89,104 @@ def train_test_formation(train_indices: list, test_idx: int,
 
 
 if __name__ == "__main__":
-    results = ResultStorage()
-
+    # load subjects file paths
     with open('users.json') as json_file:
-        users_data = json.load(json_file)
+        subjects_data = json.load(json_file)
+        subjects = [subject for subject in subjects_data]
 
-    users_count = len(users_data)
-    windows_minutes = [1, 2, 3, 4, 5]
-
+    # load raw data from files
     raw_data = dict()
+    for subject in subjects:
+        print(f"load files for {subject}")
+        for short_file_path in subjects_data[subject]:
+            file_path = os.path.join(gcfg.PROJ_SORTED_PATH, short_file_path)
+            print(f"\tloading file {file_path}...")
+            raw_data[file_path] = eeg.read_fif(file_path)
+            print(f"\t{file_path} loaded")
 
-    for user in users_data:
-        print(f"load files for {user}")
-        for stripped_file_name in users_data[user]:
-            file_name = os.path.join(gcfg.PROJ_SORTED_PATH, stripped_file_name)
-            print(f"\tloading file {file_name}")
-            raw_data[file_name] = eeg.read_fif(file_name)
+    grid = {'window_minutes': [1, 2, 3, 4, 5],
+            'model': ['lr', 'mlp']}
+    param_grid = ParameterGrid(grid)
 
-    for window_minutes in windows_minutes:
+    results = []
+    for params in param_grid:
+        window_minutes = params['window_minutes']
         window_seconds = window_minutes * 60
 
-        for user in users_data:
-            fetch_files, stripped_fetch_files = [], []
-
-            for stripped_file_name in users_data[user]:
-                file_name = os.path.join(gcfg.PROJ_SORTED_PATH, stripped_file_name)
-                fetch_files.append(file_name)
-                stripped_fetch_files.append(stripped_file_name)
+        subjects_results = dict.fromkeys(subjects)
+        for subject in subjects:
+            file_names, short_file_names = [], []
+            for short_file_path in subjects_data[subject]:
+                short_file_names.append(short_file_path)
+                file_path = os.path.join(gcfg.PROJ_SORTED_PATH, short_file_path)
+                file_names.append(file_path)
 
             # file-fold validation
-            for test_idx in range(len(fetch_files)):
-                train_indices = [train_idx for train_idx in range(len(fetch_files)) if train_idx != test_idx]
+            fold_results = {'accuracy_score': [],
+                            'balanced_accuracy_score': []}
+            for test_idx in range(len(file_names)):
+                train_indices = [train_idx for train_idx in range(len(file_names)) if train_idx != test_idx]
 
                 print("train:")
                 for train_idx in train_indices:
-                    print(stripped_fetch_files[train_idx])
+                    print(short_file_names[train_idx])
                 print("test:")
                 printlg(f"{window_minutes} minute(s)")
-                printlg(user)
-                printlg(stripped_fetch_files[test_idx])
+                printlg(subject)
+                printlg(short_file_names[test_idx])
 
-                x_train, x_test, y_train, y_test = train_test_formation(train_indices, test_idx, fetch_files,
+                x_train, x_test, y_train, y_test = train_test_formation(train_indices, test_idx, file_names,
                                                                         raw_data, window_seconds)
 
-                model_name = "LogisticRegression"
-                print(f"\t{model_name}")
-                model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0, class_weight='balanced', random_state=0).fit(x_train, y_train)
-                y_pred = model.predict_proba(x_test)
-                score = accuracy_score(y_test, y_pred.argmax(axis=1))
-                results.add(score, ["accuracy_score", f"{window_minutes}", model_name, user, "folds"])
-                print(f"\t\taccuracy_score: {score}")
-                balanced_score = balanced_accuracy_score(y_test, y_pred.argmax(axis=1))
-                results.add(balanced_score, ["balanced_accuracy_score", f"{window_minutes}", model_name, user, "folds"])
-                print(f"\t\tbalanced_accuracy_score: {balanced_score}")
+                if params['model'] == 'lr':
+                    model_name = "LogisticRegression"
+                    print(f"\t{model_name}")
+                    model = LogisticRegression(solver='liblinear', penalty='l1', C=1.0, class_weight='balanced',
+                                               random_state=0).fit(x_train, y_train)
+                    y_pred = model.predict_proba(x_test)
+                    score = accuracy_score(y_test, y_pred.argmax(axis=1))
+                    fold_results['accuracy_score'].append(score)
+                    print(f"\t\taccuracy_score: {score}")
+                    balanced_score = balanced_accuracy_score(y_test, y_pred.argmax(axis=1))
+                    fold_results['balanced_accuracy_score'].append(balanced_score)
+                    print(f"\t\tbalanced_accuracy_score: {balanced_score}")
+                elif params['model'] == 'mlp':
+                    model_name = "MLPClassifier"
+                    print(f"\t{model_name}")
+                    model = MLPClassifier(hidden_layer_sizes=(20, 20),
+                                          activation='tanh',
+                                          random_state=1,
+                                          max_iter=500,
+                                          alpha=0.01,
+                                          solver='sgd').fit(x_train, y_train)
+                    y_pred = model.predict_proba(x_test)
+                    score = accuracy_score(y_test, y_pred.argmax(axis=1))
+                    fold_results['accuracy_score'].append(score)
+                    print(f"\t\taccuracy_score: {score}")
+                    balanced_score = balanced_accuracy_score(y_test, y_pred.argmax(axis=1))
+                    fold_results['balanced_accuracy_score'].append(balanced_score)
+                    print(f"\t\tbalanced_accuracy_score: {balanced_score}")
 
-                model_name = "MLPClassifier"
-                print(f"\t{model_name}")
-                model = MLPClassifier(hidden_layer_sizes=(20, 20),
-                                      activation='tanh',
-                                      random_state=1,
-                                      max_iter=500,
-                                      alpha=0.01,
-                                      solver='sgd').fit(x_train, y_train)
-                y_pred = model.predict_proba(x_test)
-                score = accuracy_score(y_test, y_pred.argmax(axis=1))
-                results.add(score, ["accuracy_score", f"{window_minutes}", model_name, user, "folds"])
-                print(f"\t\taccuracy_score: {score}")
-                balanced_score = balanced_accuracy_score(y_test, y_pred.argmax(axis=1))
-                results.add(balanced_score, ["balanced_accuracy_score", f"{window_minutes}", model_name, user, "folds"])
-                print(f"\t\tbalanced_accuracy_score: {balanced_score}")
+            subjects_results[subject] = dict()
+            subjects_results[subject]['accuracy_score'] = np.mean(fold_results['accuracy_score'])
+            subjects_results[subject]['balanced_accuracy_score'] = np.mean(fold_results['balanced_accuracy_score'])
 
-    results.mean()
+        results.append(subjects_results)
 
-    printg("Results")
-    metric = "balanced_accuracy_score"
-    model_name = "LogisticRegression"
-    printg(f"{model_name} {metric}")
-    for window_minutes in windows_minutes:
-        window_score = results.storage[metric][f"{window_minutes}"]["LogisticRegression"]["mean"]
-        printcn(f"{window_minutes} minute(s) - avg score: {window_score}")
-        for user in users_data:
-            score = results.storage[metric][f"{window_minutes}"]["LogisticRegression"][user]["mean"]
-            print(f"\t{user} - {score}")
+    for window_minutes in grid['window_minutes']:
+        print(f"{window_minutes} minute(s):")
+        accuracy_score_list = []
+        balanced_accuracy_score_list = []
+        for i in range(len(results)):
+            if param_grid[i]['model'] == 'lr' and param_grid[i]['window_minutes'] == window_minutes:
+                for subject in results[i]:
+                    print(f"\t{subject}:")
+                    print(f"\t\taccuracy_score - {results[i][subject]['accuracy_score']}")
+                    print(f"\t\tbalanced_accuracy_score - {results[i][subject]['balanced_accuracy_score']}")
 
-    print()
-    metric = "accuracy_score"
-    printg(f"{model_name} {metric}")
-    for window_minutes in windows_minutes:
-        window_score = results.storage[metric][f"{window_minutes}"]["LogisticRegression"]["mean"]
-        printcn(f"{window_minutes} minute(s) - avg score: {window_score}")
-        for user in users_data:
-            score = results.storage[metric][f"{window_minutes}"]["LogisticRegression"][user]["mean"]
-            print(f"\t{user} - {score}")
+                    accuracy_score_list.append(results[i][subject]['accuracy_score'])
+                    balanced_accuracy_score_list.append(results[i][subject]['balanced_accuracy_score'])
+        printcn(f"{window_minutes} minute(s):")
+        printcn(f"\tavg accuracy_score: {np.mean(accuracy_score_list)}")
+        printcn(f"\tavg balanced_accuracy_score: {np.mean(balanced_accuracy_score_list)}")
+

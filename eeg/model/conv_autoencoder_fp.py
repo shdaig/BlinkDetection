@@ -29,11 +29,11 @@ class BlinkAutoencoder1DConv(Model):
         self.shape = shape
         self.encoder = tf.keras.Sequential([
             layers.Input(shape=(self.shape, 1)),  # Input for 1D data
-            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.Conv1D(16, 3, activation='relu', padding='valid', strides=2),
             layers.MaxPool1D(pool_size=2),
-            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.Conv1D(8, 3, activation='relu', padding='valid', strides=2),
             layers.MaxPool1D(pool_size=2),
-            layers.Conv1D(1, 3, activation='relu', padding='valid', strides=2),
+            layers.Conv1D(4, 3, activation='relu', padding='valid', strides=2),
             layers.MaxPool1D(pool_size=2),
             layers.Flatten(),
             layers.Dense(self.latent_dim, activation="relu")
@@ -42,11 +42,11 @@ class BlinkAutoencoder1DConv(Model):
         self.decoder = tf.keras.Sequential([
             layers.Reshape((self.latent_dim, 1)),
             layers.UpSampling1D(size=2),
-            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.Conv1DTranspose(4, kernel_size=3, strides=2, activation='relu', padding='valid'),
             layers.UpSampling1D(size=2),
-            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.Conv1DTranspose(8, kernel_size=3, strides=2, activation='relu', padding='valid'),
             layers.UpSampling1D(size=2),
-            layers.Conv1DTranspose(1, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.Conv1DTranspose(16, kernel_size=3, strides=2, activation='relu', padding='valid'),
             layers.Flatten(),
             layers.Dense(self.shape, activation="relu"),
             layers.Reshape((self.shape, 1))
@@ -118,7 +118,7 @@ def main():
     test_data = tf.cast(test_data, tf.float32)
 
     shape = train_data.shape[1]
-    latent_dim = 5
+    latent_dim = 12
     autoencoder = BlinkAutoencoder1DConv(latent_dim, shape)
     autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
 
@@ -149,8 +149,9 @@ def main():
         print(decoded_test_data.shape)
         rmdir("temp_decoded_plots")
         mkdir("temp_decoded_plots")
-        for i in range(0, decoded_test_data.shape[0], 50):
-            plt.plot(test_data[i])
+        k = 25
+        for i in range(0, decoded_test_data.shape[0], k):
+            plt.plot(test_data[i], linewidth=5)
             plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
             plt.close()
 
@@ -158,7 +159,7 @@ def main():
         reduced_data = tsne.fit_transform(encoded_data)
 
         fig = go.Figure()
-        for i in range(0, decoded_test_data.shape[0], 50):
+        for i in range(0, decoded_test_data.shape[0], k):
             fig.add_layout_image(
                 source=Image.open(f"temp_decoded_plots/{i}.png"),
                 xanchor="center",

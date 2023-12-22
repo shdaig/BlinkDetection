@@ -28,13 +28,15 @@ class BlinkAutoencoder(Model):
         self.latent_dim = latent_dim
         self.shape = shape
         self.encoder = tf.keras.Sequential([
+          layers.Dense(128, activation="relu"),
+          layers.Dense(64, activation="relu"),
           layers.Dense(32, activation="relu"),
-          layers.Dense(16, activation="relu"),
           layers.Dense(latent_dim, activation="relu")])
 
         self.decoder = tf.keras.Sequential([
-          layers.Dense(16, activation="relu"),
           layers.Dense(32, activation="relu"),
+          layers.Dense(64, activation="relu"),
+          layers.Dense(128, activation="relu"),
           layers.Dense(350, activation="sigmoid")])
 
     def call(self, x):
@@ -79,9 +81,9 @@ def main():
     fp = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
 
     fp = bandpass_filter(fp, lowcut=0.1,
-                             highcut=3.0,
+                             highcut=30.0,
                              signal_freq=500,
-                             filter_order=1)
+                             filter_order=4)
 
     window = 350
     step = 10
@@ -103,12 +105,12 @@ def main():
     test_data = tf.cast(test_data, tf.float32)
 
     shape = train_data.shape[1]
-    latent_dim = 5
+    latent_dim = 25
     autoencoder = BlinkAutoencoder(latent_dim, shape)
     autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
 
     autoencoder.fit(train_data, train_data,
-                    epochs=20,
+                    epochs=30,
                     batch_size=512,
                     shuffle=True,
                     validation_data=(test_data, test_data))
@@ -134,8 +136,9 @@ def main():
         print(decoded_test_data.shape)
         rmdir("temp_decoded_plots")
         mkdir("temp_decoded_plots")
-        for i in range(0, decoded_test_data.shape[0], 50):
-            plt.plot(test_data[i])
+        k = 25
+        for i in range(0, decoded_test_data.shape[0], k):
+            plt.plot(test_data[i], linewidth=5)
             plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
             plt.close()
 
@@ -143,7 +146,7 @@ def main():
         reduced_data = tsne.fit_transform(encoded_data)
 
         fig = go.Figure()
-        for i in range(0, decoded_test_data.shape[0], 50):
+        for i in range(0, decoded_test_data.shape[0], k):
             fig.add_layout_image(
                 source=Image.open(f"temp_decoded_plots/{i}.png"),
                 xanchor="center",
