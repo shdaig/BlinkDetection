@@ -5,3 +5,4 @@ users*.json
 __pycache__/
 temp_*/
 .idea/
+saved_*/

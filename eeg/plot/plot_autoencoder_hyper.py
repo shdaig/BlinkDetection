@@ -104,64 +104,74 @@ def main():
     train_data = tf.cast(train_data, tf.float32)
     test_data = tf.cast(test_data, tf.float32)
 
-    shape = train_data.shape[1]
-    latent_dim = 25
-    autoencoder = BlinkAutoencoder(latent_dim, shape)
-    autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
+    latent_dims = [2, 3, 5, 7, 10, 12, 15, 17, 20, 23, 25, 27, 30, 32]
+    val_history = []
 
-    autoencoder.fit(train_data, train_data,
-                    epochs=30,
-                    batch_size=512,
-                    shuffle=True,
-                    validation_data=(test_data, test_data))
+    for latent_dim in latent_dims:
+        shape = train_data.shape[1]
+        autoencoder = BlinkAutoencoder(latent_dim, shape)
+        autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
 
-    encoded_data = autoencoder.encoder(test_data).numpy()
+        autoencoder.fit(train_data, train_data,
+                        epochs=50,
+                        batch_size=4096,
+                        shuffle=True,
+                        validation_data=(test_data, test_data))
 
-    decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+        encoded_data = autoencoder.encoder(test_data).numpy()
+        decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+        mse = (np.square(test_data - decoded_test_data)).mean()
+        val_history.append(mse)
 
-    print(decoded_test_data.shape)
+    exp_name = "ae128_1"
+    with open(f'saved_arrays/{exp_name}', 'wb') as f:
+        np.save(f, np.array(val_history))
+
+    plt.plot(latent_dims, val_history)
+    plt.savefig(f'saved_plots/{exp_name}.png')
+    plt.close()
 
     # viz_mose = "tsne"
-    viz_mose = "imgs"
-
-    if viz_mose == "tsne":
-        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
-        reduced_data = tsne.fit_transform(encoded_data)
-
-        fig = go.Figure()
-        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
-        fig.show()
-    elif viz_mose == "imgs":
-        decoded_test_data = autoencoder.decoder(encoded_data).numpy()
-        print(decoded_test_data.shape)
-        rmdir("temp_decoded_plots")
-        mkdir("temp_decoded_plots")
-        k = 25
-        for i in range(0, decoded_test_data.shape[0], k):
-            plt.plot(test_data[i], linewidth=5)
-            plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
-            plt.close()
-
-        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
-        reduced_data = tsne.fit_transform(encoded_data)
-
-        fig = go.Figure()
-        for i in range(0, decoded_test_data.shape[0], k):
-            fig.add_layout_image(
-                source=Image.open(f"temp_decoded_plots/{i}.png"),
-                xanchor="center",
-                yanchor="middle",
-                x=reduced_data[i, 0],
-                y=reduced_data[i, 1],
-                xref="x",
-                yref="y",
-                sizex=5,
-                sizey=5,
-                opacity=1.0,
-                layer="above"
-            )
-        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
-        fig.show()
+    # viz_mose = "imgs"
+    #
+    # if viz_mose == "tsne":
+    #     tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+    #     reduced_data = tsne.fit_transform(encoded_data)
+    #
+    #     fig = go.Figure()
+    #     fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+    #     fig.show()
+    # elif viz_mose == "imgs":
+    #     decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+    #     print(decoded_test_data.shape)
+    #     rmdir("temp_decoded_plots")
+    #     mkdir("temp_decoded_plots")
+    #     k = 25
+    #     for i in range(0, decoded_test_data.shape[0], k):
+    #         plt.plot(test_data[i], linewidth=5)
+    #         plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
+    #         plt.close()
+    #
+    #     tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+    #     reduced_data = tsne.fit_transform(encoded_data)
+    #
+    #     fig = go.Figure()
+    #     for i in range(0, decoded_test_data.shape[0], k):
+    #         fig.add_layout_image(
+    #             source=Image.open(f"temp_decoded_plots/{i}.png"),
+    #             xanchor="center",
+    #             yanchor="middle",
+    #             x=reduced_data[i, 0],
+    #             y=reduced_data[i, 1],
+    #             xref="x",
+    #             yref="y",
+    #             sizex=5,
+    #             sizey=5,
+    #             opacity=1.0,
+    #             layer="above"
+    #         )
+    #     fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+    #     fig.show()
 
 
 if __name__ == "__main__":

@@ -3,22 +3,41 @@ import numpy as np
 
 import statesutils.reaction_utils as ru
 
+import plotly.graph_objects as go
+
 
 class StatesLabelEncoder:
-    def get_quality(self, raw: mne.io.Raw, window: int) -> np.ndarray:
+    def get_quality(self, raw: mne.io.Raw, window: int, mode: str = "continuous") -> np.ndarray:
         """
         :param raw: Raw data from fif file
         :param window: Minutes window for quality calculation
-        :return: Time samples, channel names, channel data
+        :param mode: optional - continuous or (discrete2 / discrete4)
+        :return: Interpolated quality array
         """
+        step_size = window * 60 * 500
         _, _, _, _, _, react_range, q = ru.qual_plot_data(raw=raw, window=window)
-        times = raw.times
-        print(react_range[0])
-        print(react_range[-1])
-        start_idx, end_idx = np.where(times > react_range[0])[0][0], np.where(times > react_range[-1])[0][0]
-        times = times[start_idx:end_idx]
+        first_reaction_idx = np.argwhere(raw.times >= react_range[0])[0][0]
 
-        return q
+        qual_idxs = np.array([step_size * i for i in range(q.shape[0])])
+
+        xvals = np.linspace(0, qual_idxs[-1], step_size * (q.shape[0] - 1) + 1)
+        q_interp = np.interp(xvals, qual_idxs, q)
+
+        if mode == "discrete4":
+            for i in range(q_interp.shape[0]):
+                q_interp[i] = q_interp[i] // 0.25 if q_interp[i] != 1.0 else 3.0
+        elif mode == "discrete2":
+            for i in range(q_interp.shape[0]):
+                q_interp[i] = q_interp[i] // 0.5 if q_interp[i] != 1.0 else 1.0
+
+        times, _, _ = eeg.fetch_channels(raw)
+
+        initial_skip = np.full((first_reaction_idx + step_size,), -1)
+        q_full = np.concatenate((initial_skip, q_interp))
+        final_skip = np.full((times.shape[0] - q_full.shape[0],), -1)
+        q_full = np.concatenate((q_full, final_skip))
+
+        return q_full
 
 
 if __name__ == "__main__":
@@ -39,10 +58,12 @@ if __name__ == "__main__":
 
     raw = eeg.read_fif(file_names[idx])
     times, channel_names, data = eeg.fetch_channels(raw)
-    fp1 = data[channel_names == "Fp1"][0]
-
-    print(fp1.shape)
 
     sle = StatesLabelEncoder()
+    q_discrete4 = sle.get_quality(raw, window=1, mode="discrete4")
+    q_continuous = sle.get_quality(raw, window=1, mode="continuous")
 
-    sle.get_quality(raw, window=1)
+    fig = go.Figure()
+    fig.add_scatter(y=q_continuous, mode='lines')
+    fig.add_scatter(y=q_discrete4, mode='lines')
+    fig.show()
