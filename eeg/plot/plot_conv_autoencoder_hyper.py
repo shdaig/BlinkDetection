@@ -29,10 +29,9 @@ class BlinkAutoencoder1DConv(Model):
         self.shape = shape
         self.encoder = tf.keras.Sequential([
             layers.Input(shape=(self.shape, 1)),  # Input for 1D data
+            layers.Conv1D(32, 3, activation='relu', padding='valid', strides=2),
             layers.Conv1D(16, 3, activation='relu', padding='valid', strides=2),
-            layers.MaxPool1D(pool_size=2),
             layers.Conv1D(8, 3, activation='relu', padding='valid', strides=2),
-            layers.MaxPool1D(pool_size=2),
             layers.Conv1D(4, 3, activation='relu', padding='valid', strides=2),
             layers.Flatten(),
             layers.Dense(self.latent_dim, activation="relu")
@@ -41,12 +40,11 @@ class BlinkAutoencoder1DConv(Model):
         self.decoder = tf.keras.Sequential([
             layers.Reshape((self.latent_dim, 1)),
             layers.Conv1DTranspose(4, kernel_size=3, strides=2, activation='relu', padding='valid'),
-            layers.UpSampling1D(size=2),
             layers.Conv1DTranspose(8, kernel_size=3, strides=2, activation='relu', padding='valid'),
-            layers.UpSampling1D(size=2),
             layers.Conv1DTranspose(16, kernel_size=3, strides=2, activation='relu', padding='valid'),
+            layers.Conv1DTranspose(32, kernel_size=3, strides=2, activation='relu', padding='valid'),
             layers.Flatten(),
-            layers.Dense(self.shape, activation="relu"),
+            layers.Dense(self.shape, activation="sigmoid"),
             layers.Reshape((self.shape, 1))
         ])
 
@@ -124,8 +122,8 @@ def main():
         autoencoder.compile(optimizer='adam', loss=losses.MeanSquaredError())
 
         autoencoder.fit(train_data, train_data,
-                        epochs=10,
-                        batch_size=2048,
+                        epochs=50,
+                        batch_size=4096,
                         shuffle=True,
                         validation_data=(test_data, test_data))
 
@@ -135,7 +133,7 @@ def main():
         mse = (np.square(test_data - decoded_test_data)).mean()
         val_history.append(mse)
 
-    exp_name = "conv_ae16_0"
+    exp_name = "conv_ae32_1"
     with open(f'saved_arrays/{exp_name}', 'wb') as f:
         np.save(f, np.array(val_history))
 

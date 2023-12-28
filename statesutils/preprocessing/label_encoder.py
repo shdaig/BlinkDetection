@@ -15,7 +15,7 @@ class StatesLabelEncoder:
         :return: Interpolated quality array
         """
         step_size = window * 60 * 500
-        _, _, _, _, _, react_range, q = ru.qual_plot_data(raw=raw, window=window)
+        lags, lag_times, lags2, lag_times2, first_mark_time, react_range, q = ru.qual_plot_data(raw=raw, window=window)
         first_reaction_idx = np.argwhere(raw.times >= react_range[0])[0][0]
 
         qual_idxs = np.array([step_size * i for i in range(q.shape[0])])
@@ -37,7 +37,10 @@ class StatesLabelEncoder:
         final_skip = np.full((times.shape[0] - q_full.shape[0],), -1)
         q_full = np.concatenate((q_full, final_skip))
 
-        return q_full
+        return lags, lag_times, lags2, lag_times2, first_mark_time, q_full
+
+    def get_sleep(self, raw: mne.io.Raw, window: int, mode: str = "continuous") -> np.ndarray:
+
 
 
 if __name__ == "__main__":
@@ -60,10 +63,30 @@ if __name__ == "__main__":
     times, channel_names, data = eeg.fetch_channels(raw)
 
     sle = StatesLabelEncoder()
-    q_discrete4 = sle.get_quality(raw, window=1, mode="discrete4")
-    q_continuous = sle.get_quality(raw, window=1, mode="continuous")
+    # lags, lag_times, lags2, lag_times2, first_mark_time, q_discrete4 = sle.get_quality(raw, window=1, mode="discrete4")
+    lags, lag_times, lags2, lag_times2, first_mark_time, q_continuous = sle.get_quality(raw, window=1, mode="continuous")
+
+    lags = lags / np.max(lags)
+    lags2 = lags2 / (np.max(lags2) * 3)
 
     fig = go.Figure()
-    fig.add_scatter(y=q_continuous, mode='lines')
-    fig.add_scatter(y=q_discrete4, mode='lines')
+    fig.add_scatter(y=q_continuous, mode='lines', name="quality of work")
+    fig.add_scatter(x=(lag_times + first_mark_time) * 500,
+                    y=lags,
+                    mode="markers",
+                    name="correct reaction",
+                    marker=dict(size=8,
+                                opacity=.5,
+                                color="green")
+                    )
+    fig.add_scatter(x=(lag_times2 + first_mark_time) * 500,
+                    y=lags2,
+                    mode="markers",
+                    name="errors",
+                    marker=dict(size=8,
+                                symbol="x",
+                                opacity=.5,
+                                color="red")
+                    )
+    # fig.add_scatter(y=q_discrete4, mode='lines')
     fig.show()
