@@ -35,13 +35,18 @@ class StatesLabelEncoder:
 
         return q_supplemented
 
-    def get_sleep_state(self, raw: mne.io.Raw, window: int) -> np.ndarray:
+    def get_sleep_state(self,
+                        raw: mne.io.Raw,
+                        window: int = 3,
+                        errors_count_threshold: int = 2,
+                        reactions_count_threshold: int = 2) -> np.ndarray:
         """
+        :param reactions_count_threshold:
+        :param errors_count_threshold:
         :param raw: Raw data from fif file
         :param window: Minutes window for quality calculation
         :return: Interpolated quality array
         """
-        step_size = window * 60 * self.sampling_freq
         lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=window)
 
         times, _, _ = eeg.fetch_channels(raw)
@@ -61,26 +66,24 @@ class StatesLabelEncoder:
         reaction_series_count = 0
         current_state = 1
         for i, (k, v) in enumerate(sorted_dict.items()):
+            lags_times.append(k)
             if v == "reaction":
                 reaction_series_count += 1
+                errors_series_count = 0
+                if reaction_series_count >= reactions_count_threshold:
+                    for j in range(1, reaction_series_count):
+                        states[-j] = 1
+                    current_state = 1
+                    reaction_series_count = 0
             else:
                 errors_series_count += 1
-            if errors_series_count >= window:
-                
+                reaction_series_count = 0
+                if errors_series_count >= errors_count_threshold:
+                    for j in range(1, errors_series_count):
+                        states[-j] = 0
+                    current_state = 0
+                    errors_series_count = 0
             states.append(current_state)
-
-        # for i, (k, v) in enumerate(sorted_dict.items()):
-        #     lags_times.append(k)
-        #     if v == "reaction":
-        #         for j in range(errors_series_count):
-        #             states.append(0 if errors_series_count >= window else 1)
-        #         errors_series_count = 0
-        #         states.append(1)
-        #     else:
-        #         errors_series_count += 1
-        #         reaction_series_count = 0
-        # for j in range(errors_series_count):
-        #     states.append(0 if errors_series_count >= window else 1)
 
         lags_times = (np.array(lags_times) + first_mark_time) * 500
         k = 0
@@ -115,46 +118,48 @@ if __name__ == "__main__":
     for i, name in enumerate(stripped_file_names):
         print(f"[{i}] {name}")
     print()
-    idx = 22
-    print(f"[{idx}] {stripped_file_names[idx]} loading...")
+    for idx in range(len(stripped_file_names)):
+        # idx = 22
+        print(f"[{idx}] {stripped_file_names[idx]} loading...")
 
-    raw = eeg.read_fif(file_names[idx])
-    times, channel_names, data = eeg.fetch_channels(raw)
-    window = 1
+        raw = eeg.read_fif(file_names[idx])
+        times, channel_names, data = eeg.fetch_channels(raw)
+        window = 1
 
-    # get labels for eeg signal
-    sle = StatesLabelEncoder()
-    q_continuous = sle.get_quality(raw, window=window, mode="continuous")
-    q_discrete = sle.get_quality(raw, window=window, mode="discrete")
-    sleep_state = sle.get_sleep_state(raw, 3)
+        # get labels for eeg signal
+        sle = StatesLabelEncoder()
+        q_continuous = sle.get_quality(raw, window=window, mode="continuous")
+        q_discrete = sle.get_quality(raw, window=window, mode="discrete")
+        sleep_state = sle.get_sleep_state(raw, 3, 3, 3)
 
-    # debug plotting of quality labels
-    plot_flag = True
-    if plot_flag:
-        lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=window)
+        # debug plotting of quality labels
+        plot_flag = True
+        if plot_flag:
+            lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=window)
 
-        lags = lags / np.max(lags)
-        lags2 = lags2 / (np.max(lags2) * 3)
+            lags = lags / np.max(lags)
+            lags2 = lags2 / (np.max(lags2) * 3)
 
-        fig = go.Figure()
-        fig.add_scatter(y=q_discrete, mode='lines', name="discrete quality of work")
-        fig.add_scatter(y=q_continuous, mode='lines', name="continuous quality of work")
-        fig.add_scatter(y=sleep_state, mode='lines', name="sleep state")
-        fig.add_scatter(x=(lag_times + first_mark_time) * 500,
-                        y=lags,
-                        mode="markers",
-                        name="correct reaction",
-                        marker=dict(size=8,
-                                    opacity=.5,
-                                    color="green")
-                        )
-        fig.add_scatter(x=(lag_times2 + first_mark_time) * 500,
-                        y=lags2,
-                        mode="markers",
-                        name="errors",
-                        marker=dict(size=8,
-                                    symbol="x",
-                                    opacity=.5,
-                                    color="red")
-                        )
-        fig.show()
+            fig = go.Figure()
+            # fig.add_scatter(y=q_discrete, mode='lines', name="discrete quality of work")
+            fig.add_scatter(y=q_continuous, mode='lines', name="continuous quality of work")
+            fig.add_scatter(y=sleep_state, mode='lines', name="sleep state")
+            fig.add_scatter(x=(lag_times + first_mark_time) * 500,
+                            y=lags,
+                            mode="markers",
+                            name="correct reaction",
+                            marker=dict(size=8,
+                                        opacity=.5,
+                                        color="green")
+                            )
+            fig.add_scatter(x=(lag_times2 + first_mark_time) * 500,
+                            y=lags2,
+                            mode="markers",
+                            name="errors",
+                            marker=dict(size=8,
+                                        symbol="x",
+                                        opacity=.5,
+                                        color="red")
+                            )
+            fig.update_layout(title={'text': stripped_file_names[idx]})
+            fig.show()
