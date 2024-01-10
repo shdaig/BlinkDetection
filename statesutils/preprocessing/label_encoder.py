@@ -5,6 +5,7 @@ import statesutils.reaction_utils as ru
 
 import utils.eeg as eeg
 
+
 class StatesLabelEncoder:
     def __init__(self, sampling_freq: int = 500):
         self.sampling_freq = sampling_freq
@@ -37,17 +38,15 @@ class StatesLabelEncoder:
 
     def get_sleep_state(self,
                         raw: mne.io.Raw,
-                        window: int = 3,
                         errors_count_threshold: int = 2,
                         reactions_count_threshold: int = 2) -> np.ndarray:
         """
+        :param raw: Raw data from fif file
         :param reactions_count_threshold:
         :param errors_count_threshold:
-        :param raw: Raw data from fif file
-        :param window: Minutes window for quality calculation
         :return: Interpolated quality array
         """
-        lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=window)
+        lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=3)
 
         times, _, _ = eeg.fetch_channels(raw)
         n_samples = times.shape[0]
@@ -130,7 +129,7 @@ if __name__ == "__main__":
         sle = StatesLabelEncoder()
         q_continuous = sle.get_quality(raw, window=window, mode="continuous")
         q_discrete = sle.get_quality(raw, window=window, mode="discrete")
-        sleep_state = sle.get_sleep_state(raw, 3, 3, 3)
+        sleep_state = sle.get_sleep_state(raw, 3, 3)
 
         # debug plotting of quality labels
         plot_flag = True
