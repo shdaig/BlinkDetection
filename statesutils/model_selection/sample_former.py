@@ -17,15 +17,48 @@ def __subfinder(mylist: np.ndarray, pattern: list) -> list:
 def get_sleep_samples(eeg_chanel_data: np.ndarray,
                       sleep_state_labels: np.ndarray,
                       data_depth: int,
-                      max_prediction_horizon: int):
-    first_sleep_idx = __subfinder(sleep_state_labels, [1, 0])[0]
+                      max_prediction_horizon: int,
+                      sleep_idx: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """
+    :param eeg_chanel_data: Data from EEG
+    :param sleep_state_labels: Labels with sleep state
+    :param data_depth: Depth of EEG time series for features
+    :param max_prediction_horizon: Horizon for sleep prediction
+    :param sleep_idx: Index of sleep label for calculations
+    :return: features, labels
+    """
+    first_sleep_idx = __subfinder(sleep_state_labels, [1, 0])[sleep_idx] + 1
 
-    print(first_sleep_idx)
-    print(first_sleep_idx - max_prediction_horizon * 60 * 500)
-    for i in range(first_sleep_idx - max_prediction_horizon * 60 * 500, first_sleep_idx + 1, 10):
-        print(i)
+    signal_slices = []
+    labels = []
 
-    return first_sleep_idx
+    sleep_state_start = first_sleep_idx - max_prediction_horizon * 60 * 500
+    sleep_state_end = first_sleep_idx
+    awake_state_start = first_sleep_idx - 2 * max_prediction_horizon * 60 * 500
+    awake_state_end = first_sleep_idx - max_prediction_horizon * 60 * 500
+
+    data_depth_conv = data_depth * 60 * 500
+
+    step = 100
+
+    for i in range(awake_state_start, awake_state_end, step):
+        signal_slices.append(eeg_chanel_data[i - data_depth_conv: i])
+        labels.append(1)
+    for i in range(sleep_state_start, sleep_state_end, step):
+        signal_slices.append(eeg_chanel_data[i - data_depth_conv: i])
+        labels.append(0)
+
+    features = []
+    for signal_slice in signal_slices:
+        slice_features = []
+        for i in range(350, len(signal_slice), step):
+            slice_features.append(signal_slice[i - 350: i])
+        features.append(slice_features)
+
+    features = np.array(features)
+    labels = np.array(labels)
+
+    return features, labels
 
 
 if __name__ == "__main__":
@@ -37,7 +70,6 @@ if __name__ == "__main__":
     from utils.color_print import *
 
     import warnings
-
     warnings.filterwarnings("ignore")
 
     # data loading
@@ -60,4 +92,7 @@ if __name__ == "__main__":
     fp1, fp2 = channel_data[channel_names == "Fp1"][0], channel_data[channel_names == "Fp2"][0]
     fp_avg = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
 
-    print(get_sleep_samples(fp_avg, sleep_state, data_depth=3, max_prediction_horizon=1))
+    x_raw, y = get_sleep_samples(fp_avg, sleep_state, data_depth=3, max_prediction_horizon=1)
+    print(x_raw.shape)
+    print(y.shape)
+
