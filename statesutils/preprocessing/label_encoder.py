@@ -31,8 +31,9 @@ class StatesLabelEncoder:
         times, _, _ = eeg.fetch_channels(raw)
         initial_skip = np.full((first_reaction_idx + step_size,), -1)
         q_supplemented = np.concatenate((initial_skip, q_interp))
-        final_skip = np.full((times.shape[0] - q_supplemented.shape[0],), -1)
-        q_supplemented = np.concatenate((q_supplemented, final_skip))
+        if times.shape[0] - q_supplemented.shape[0] > 0:
+            final_skip = np.full((times.shape[0] - q_supplemented.shape[0],), -1)
+            q_supplemented = np.concatenate((q_supplemented, final_skip))
 
         return q_supplemented
 

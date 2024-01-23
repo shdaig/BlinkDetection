@@ -52,13 +52,23 @@ def get_sleep_samples(eeg_chanel_data: np.ndarray,
     for signal_slice in signal_slices:
         slice_features = []
         for i in range(350, len(signal_slice), step):
-            slice_features.append(signal_slice[i - 350: i])
+            x_window = signal_slice[i - 350: i]
+
+            min_val = np.min(x_window)
+            max_val = np.max(x_window)
+
+            x_window = (x_window - min_val) / (max_val - min_val)
+
+            slice_features.append(x_window)
         features.append(slice_features)
 
     features = np.array(features)
     labels = np.array(labels)
 
     return features, labels
+
+
+
 
 
 if __name__ == "__main__":

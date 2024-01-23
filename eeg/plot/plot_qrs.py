@@ -96,15 +96,17 @@ def main():
 
     detected_peaks_values = integrated_fp[detected_peaks_indices]
 
+    view_window_samples = 25 * 60 * 500
+
     layout = go.Layout(
         xaxis=dict(
             # range=[0, 1]
-            range=[0, 500*60]
+            range=[view_window_samples - 500 * 60, view_window_samples]
         )
     )
     fig = go.Figure(layout=layout)
     fig.add_scatter(y=fp, mode='lines', name="fp")
-    fig.add_scatter(y=filtered_fp, mode='lines', name="filtered_fp")
+    # fig.add_scatter(y=filtered_fp, mode='lines', name="filtered_fp")
     # fig.add_scatter(y=differentiated_fp, mode='lines', name="differentiated_fp")
     # fig.add_scatter(y=squared_fp, mode='lines', name="squared_fp")
     # fig.add_scatter(y=integrated_fp, mode='lines', name="integrated_fp")
