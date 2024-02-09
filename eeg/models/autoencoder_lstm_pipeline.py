@@ -60,9 +60,9 @@ if __name__ == "__main__":
         print(f"[{i}] {name}")
     print()
 
-    subject_files = {"golenishev/20230912": {"idx": 8, "sleep_idx": 0},
-                     "golenishev/20230919": {"idx": 9, "sleep_idx": 0},
-                     "golenishev/20231005": {"idx": 10, "sleep_idx": 1}}
+    subject_files = {"g/20230912": {"idx": 8, "sleep_idx": 0},
+                     "g/20230919": {"idx": 9, "sleep_idx": 0},
+                     "g/20231005": {"idx": 10, "sleep_idx": 1}}
 
     subject_dataset = {}
 

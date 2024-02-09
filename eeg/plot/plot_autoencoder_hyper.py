@@ -131,47 +131,47 @@ def main():
     plt.savefig(f'saved_plots/{exp_name}.png')
     plt.close()
 
-    # viz_mose = "tsne"
-    # viz_mose = "imgs"
-    #
-    # if viz_mose == "tsne":
-    #     tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
-    #     reduced_data = tsne.fit_transform(encoded_data)
-    #
-    #     fig = go.Figure()
-    #     fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
-    #     fig.show()
-    # elif viz_mose == "imgs":
-    #     decoded_test_data = autoencoder.decoder(encoded_data).numpy()
-    #     print(decoded_test_data.shape)
-    #     rmdir("temp_decoded_plots")
-    #     mkdir("temp_decoded_plots")
-    #     k = 25
-    #     for i in range(0, decoded_test_data.shape[0], k):
-    #         plt.plot(test_data[i], linewidth=5)
-    #         plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
-    #         plt.close()
-    #
-    #     tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
-    #     reduced_data = tsne.fit_transform(encoded_data)
-    #
-    #     fig = go.Figure()
-    #     for i in range(0, decoded_test_data.shape[0], k):
-    #         fig.add_layout_image(
-    #             source=Image.open(f"temp_decoded_plots/{i}.png"),
-    #             xanchor="center",
-    #             yanchor="middle",
-    #             x=reduced_data[i, 0],
-    #             y=reduced_data[i, 1],
-    #             xref="x",
-    #             yref="y",
-    #             sizex=5,
-    #             sizey=5,
-    #             opacity=1.0,
-    #             layer="above"
-    #         )
-    #     fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
-    #     fig.show()
+    # viz_mode = "tsne"
+    viz_mode = "imgs"
+
+    if viz_mode == "tsne":
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+        reduced_data = tsne.fit_transform(encoded_data)
+
+        fig = go.Figure()
+        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+        fig.show()
+    elif viz_mode == "imgs":
+        decoded_test_data = autoencoder.decoder(encoded_data).numpy()
+        print(decoded_test_data.shape)
+        rmdir("temp_decoded_plots")
+        mkdir("temp_decoded_plots")
+        k = 25
+        for i in range(0, decoded_test_data.shape[0], k):
+            plt.plot(test_data[i], linewidth=5)
+            plt.savefig(f"temp_decoded_plots/{i}.png", dpi=40)
+            plt.close()
+
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+        reduced_data = tsne.fit_transform(encoded_data)
+
+        fig = go.Figure()
+        for i in range(0, decoded_test_data.shape[0], k):
+            fig.add_layout_image(
+                source=Image.open(f"temp_decoded_plots/{i}.png"),
+                xanchor="center",
+                yanchor="middle",
+                x=reduced_data[i, 0],
+                y=reduced_data[i, 1],
+                xref="x",
+                yref="y",
+                sizex=5,
+                sizey=5,
+                opacity=1.0,
+                layer="above"
+            )
+        fig.add_scatter(x=reduced_data[:, 0], y=reduced_data[:, 1], mode='markers')
+        fig.show()
 
 
 if __name__ == "__main__":

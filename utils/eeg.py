@@ -1,5 +1,6 @@
 import mne
 import numpy as np
+import scipy.signal as signal
 
 
 def read_fif(filename: str) -> mne.io.Raw:
@@ -16,6 +17,15 @@ def fetch_channels(raw: mne.io.Raw) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     :return: Time samples, channel names, channel data
     """
     return raw.times, np.array(raw.ch_names), raw.get_data()
+
+
+def bandpass_filter(data, lowcut, highcut, signal_freq, filter_order) -> np.ndarray:
+    nyquist_freq = 0.5 * signal_freq
+    low = lowcut / nyquist_freq
+    high = highcut / nyquist_freq
+    b, a = signal.butter(filter_order, [low, high], btype="band")
+    y = signal.lfilter(b, a, data)
+    return y
 
 
 def get_frequency_features(channel_names: np.ndarray, channel_data: np.ndarray, times: np.ndarray):

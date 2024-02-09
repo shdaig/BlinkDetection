@@ -1,3 +1,5 @@
+import gc
+
 import numpy as np
 
 
@@ -68,7 +70,38 @@ def get_sleep_samples(eeg_chanel_data: np.ndarray,
     return features, labels
 
 
+def get_samples_labels(eeg_chanel_data: np.ndarray,
+                       state_labels: np.ndarray,
+                       data_depth: int,
+                       prediction_horizon: int) -> tuple[np.ndarray, np.ndarray]:
+    step = 250
+    slice_size = 500
+    signal_slices = []
+    labels = []
+    data_depth_conv = data_depth * 60 * 500
 
+    for i in range(data_depth_conv, eeg_chanel_data.shape[0] - (prediction_horizon * 60 * 500), step * 2):
+        signal_slices.append(eeg_chanel_data[i - data_depth_conv: i])
+        labels.append(state_labels[int(i - 1 + (prediction_horizon * 60 * 500))])
+
+    features = []
+    for signal_slice in signal_slices:
+        slice_features = []
+        for i in range(slice_size, len(signal_slice), step):
+            x_window = signal_slice[i - slice_size: i]
+
+            min_val = np.min(x_window)
+            max_val = np.max(x_window)
+
+            x_window = (x_window - min_val) / (max_val - min_val)
+
+            slice_features.append(x_window)
+        features.append(slice_features)
+
+    features_np = np.array(features)
+    labels_np = np.array(labels)
+
+    return features_np, labels_np
 
 
 if __name__ == "__main__":
