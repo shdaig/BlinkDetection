@@ -7,9 +7,6 @@ import utils.eeg as eeg
 
 
 class StatesLabelEncoder:
-    def __init__(self, sampling_freq: int = 500):
-        self.sampling_freq = sampling_freq
-
     def get_quality(self, raw: mne.io.Raw, window: int, mode: str = "continuous") -> np.ndarray:
         """
         :param raw: Raw data from fif file
@@ -17,7 +14,8 @@ class StatesLabelEncoder:
         :param mode: optional - continuous (default) or discrete [4 state classes]
         :return: Interpolated quality array
         """
-        step_size = window * 60 * self.sampling_freq
+        sfreq = int(raw.info["sfreq"])
+        step_size = window * 60 * sfreq
         _, _, _, _, _, react_range, q = ru.qual_plot_data(raw=raw, window=window)
         first_reaction_idx = np.argwhere(raw.times >= react_range[0])[0][0]
         qual_idxs = np.array([step_size * i for i in range(q.shape[0])])
@@ -37,16 +35,17 @@ class StatesLabelEncoder:
 
         return q_supplemented
 
-    def get_sleep_state(self,
-                        raw: mne.io.Raw,
-                        errors_count_threshold: int = 2,
-                        reactions_count_threshold: int = 2) -> np.ndarray:
+    def get_hard_sleep_state(self,
+                             raw: mne.io.Raw,
+                             errors_count_threshold: int = 2,
+                             reactions_count_threshold: int = 2) -> np.ndarray:
         """
         :param raw: Raw data from fif file
         :param reactions_count_threshold:
         :param errors_count_threshold:
         :return: Interpolated quality array
         """
+        sfreq = int(raw.info["sfreq"])
         lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=3)
 
         times, _, _ = eeg.fetch_channels(raw)
@@ -54,9 +53,9 @@ class StatesLabelEncoder:
 
         lag_dict = dict()
         for lag_time in lag_times:
-             lag_dict[lag_time] = "reaction"
+            lag_dict[lag_time] = "reaction"
         for lag_time in lag_times2:
-             lag_dict[lag_time] = "error"
+            lag_dict[lag_time] = "error"
 
         sorted_dict = dict(sorted(lag_dict.items()))
 
@@ -85,7 +84,7 @@ class StatesLabelEncoder:
                     errors_series_count = 0
             states.append(current_state)
 
-        lags_times = (np.array(lags_times) + first_mark_time) * 500
+        lags_times = (np.array(lags_times) + first_mark_time) * sfreq
         k = 0
         states_full = []
         state = -1
@@ -101,6 +100,47 @@ class StatesLabelEncoder:
 
         return states_full
 
+    def get_soft_sleep_state(self,
+                             raw: mne.io.Raw,
+                             errors_count_threshold: int = 2,
+                             time_window: int = 120,
+                             step_window: int = 30) -> np.ndarray:
+        """
+        :param raw: Raw data from fif file
+        :param errors_count_threshold: Number of errors in time window to detect drowsiness
+        :param time_window: Time window in seconds
+        :param step_window: Window step in seconds
+        :return: Interpolated drowsiness states
+        """
+        sfreq = int(raw.info["sfreq"])
+        lags, lag_times, lags2, lag_times2, first_mark_time, _, _ = ru.qual_plot_data(raw=raw, window=3)
+        errors_times = np.array(lag_times2)
+        times, _, _ = eeg.fetch_channels(raw)
+        n_samples = times.shape[0]
+        time_window_samples = time_window * sfreq
+        step_window_samples = step_window * sfreq
+        errors_samples = errors_times * sfreq + first_mark_time * sfreq
+
+        states = []
+        for i in range(time_window_samples, n_samples, step_window_samples):
+            error_count = 0
+            for error_sample in errors_samples:
+                if i - time_window_samples <= error_sample <= i:
+                    error_count += 1
+            if error_count >= errors_count_threshold:
+                states.append(0)
+            else:
+                states.append(1)
+        states_full = np.full((n_samples, ), 1)
+        for i in range(len(states)):
+            if states[i] == 0:
+                sample = time_window_samples + i * step_window_samples
+                states_full[sample - time_window_samples: sample] = 0
+        states_full[0:int(first_mark_time * sfreq)] = -1
+        states_full[int(first_mark_time * sfreq) + int(max(lag_times + lag_times2) * sfreq):n_samples] = -1
+
+        return states_full
+
 
 if __name__ == "__main__":
     import utils.path as path
@@ -110,6 +150,7 @@ if __name__ == "__main__":
     import plotly.graph_objects as go
 
     import warnings
+
     warnings.filterwarnings("ignore")
 
     # data loading
@@ -119,17 +160,19 @@ if __name__ == "__main__":
         print(f"[{i}] {name}")
     print()
     # for idx in range(len(stripped_file_names)):
-    idx = 22
+    idx = 0
     print(f"[{idx}] {stripped_file_names[idx]} loading...")
 
     raw = eeg.read_fif(file_names[idx])
+    sfreq = int(raw.info["sfreq"])
     window = 3
 
     # get labels for eeg signal
     sle = StatesLabelEncoder()
     q_continuous = sle.get_quality(raw, window=window, mode="continuous")
     q_discrete = sle.get_quality(raw, window=window, mode="discrete")
-    # sleep_state = sle.get_sleep_state(raw, 3, 3)
+    hard_sleep_state = sle.get_hard_sleep_state(raw, 2, 2)
+    soft_sleep_state = sle.get_soft_sleep_state(raw, errors_count_threshold=2, time_window=120, step_window=30)
 
     # debug plotting of quality labels
     plot_flag = True
@@ -140,10 +183,11 @@ if __name__ == "__main__":
         lags2 = lags2 / (np.max(lags2) * 3)
 
         fig = go.Figure()
-        fig.add_scatter(y=q_discrete, mode='lines', name="discrete quality of work")
+        # fig.add_scatter(y=q_discrete, mode='lines', name="discrete quality of work")
         fig.add_scatter(y=q_continuous, mode='lines', name="continuous quality of work")
-        # fig.add_scatter(y=sleep_state, mode='lines', name="sleep state")
-        fig.add_scatter(x=(lag_times + first_mark_time) * 500,
+        # fig.add_scatter(y=hard_sleep_state, mode='lines', name="hard sleep state")
+        fig.add_scatter(y=soft_sleep_state, mode='lines', name="window sleep state")
+        fig.add_scatter(x=(lag_times + first_mark_time) * sfreq,
                         y=lags,
                         mode="markers",
                         name="correct reaction",
@@ -151,7 +195,7 @@ if __name__ == "__main__":
                                     opacity=.5,
                                     color="green")
                         )
-        fig.add_scatter(x=(lag_times2 + first_mark_time) * 500,
+        fig.add_scatter(x=(lag_times2 + first_mark_time) * sfreq,
                         y=lags2,
                         mode="markers",
                         name="errors",
