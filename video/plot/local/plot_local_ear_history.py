@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-filename = "cam1_converted_1m.npy"
+filename = "---.npy"
 
 ear_history = np.load(filename)
 

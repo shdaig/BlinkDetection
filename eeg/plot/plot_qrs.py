@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.signal as signal
+import mne
 
 
 def bandpass_filter(data, lowcut, highcut, signal_freq, filter_order):
@@ -69,43 +70,59 @@ def main():
     times, channel_names, data = eeg.fetch_channels(raw)
     fp1, fp2 = data[channel_names == "Fp1"][0], data[channel_names == "Fp2"][0]
 
-    fp = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
-    fp = -fp
+    events, events_id = mne.events_from_annotations(raw, verbose=0)
+    gz_idxs = np.sort(events[events[:, 2] == events_id['GZ']][:, 0])
+    go_idxs = np.sort(events[events[:, 2] == events_id['GO']][:, 0])
+    print(gz_idxs)
+    print(go_idxs)
+
+    # fp = np.clip((fp1 + fp2) / 2, -0.0002, 0.0002)
+
+    fp = data[channel_names == "O2"][0]
+
+    # fp = -fp
     times = times / 60
 
     # avg_window = round((500 * 0.02)) + round(500 * 0.02) % 2
     # ma_fp = moving_avg(fp, window=avg_window)
 
-    filtered_fp = bandpass_filter(fp, lowcut=0.1,
-                                  highcut=30.0,
-                                  signal_freq=500,
-                                  filter_order=3)
+    # filtered_fp = bandpass_filter(fp, lowcut=0.1,
+    #                               highcut=30.0,
+    #                               signal_freq=500,
+    #                               filter_order=3)
+    #
+    # differentiated_fp = np.ediff1d(filtered_fp)
+    #
+    # squared_fp = (differentiated_fp * 1000) ** 2
+    #
+    # integrated_fp = np.convolve(squared_fp, np.ones(60))
+    #
+    # q1 = np.percentile(integrated_fp[:500 * 60], 25)
+    # q3 = np.percentile(integrated_fp[:500 * 60], 75)
+    # threshold = q3 + (q3 - q1) * 7
+    # detected_peaks_indices = findpeaks(data=integrated_fp,
+    #                                    limit=threshold,
+    #                                    spacing=50)
+    #
+    # detected_peaks_values = integrated_fp[detected_peaks_indices]
 
-    differentiated_fp = np.ediff1d(filtered_fp)
-
-    squared_fp = (differentiated_fp * 1000) ** 2
-
-    integrated_fp = np.convolve(squared_fp, np.ones(60))
-
-    q1 = np.percentile(integrated_fp[:500 * 60], 25)
-    q3 = np.percentile(integrated_fp[:500 * 60], 75)
-    threshold = q3 + (q3 - q1) * 7
-    detected_peaks_indices = findpeaks(data=integrated_fp,
-                                       limit=threshold,
-                                       spacing=50)
-
-    detected_peaks_values = integrated_fp[detected_peaks_indices]
-
-    view_window_samples = 25 * 60 * 500
+    view_window_samples = go_idxs[1]
+    print(fp[view_window_samples - 1 * 500 * 60: view_window_samples])
+    fp_max = np.max(fp[view_window_samples - 1 * 500 * 60: view_window_samples]) * 3
+    fp_min = np.min(fp[view_window_samples - 1 * 500 * 60: view_window_samples]) * 3
 
     layout = go.Layout(
         xaxis=dict(
             # range=[0, 1]
-            range=[view_window_samples - 500 * 60, view_window_samples]
+            range=[view_window_samples - 1 * 500 * 60, view_window_samples]
+        ),
+        yaxis=dict(
+            # range=[0, 1]
+            range=[fp_min, fp_max]
         )
     )
     fig = go.Figure(layout=layout)
-    fig.add_scatter(y=fp, mode='lines', name="fp")
+    fig.add_scatter(y=fp, mode='lines', name="fp", line=dict(color='black'))
     # fig.add_scatter(y=filtered_fp, mode='lines', name="filtered_fp")
     # fig.add_scatter(y=differentiated_fp, mode='lines', name="differentiated_fp")
     # fig.add_scatter(y=squared_fp, mode='lines', name="squared_fp")
